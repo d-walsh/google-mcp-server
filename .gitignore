@@ -46,3 +46,9 @@ coverage.txt
 coverage.html
 
 demo*
+
+# Python
+python/.venv/
+python/__pycache__/
+python/google_mcp/__pycache__/
+*.egg-info/
