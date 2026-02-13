@@ -255,10 +255,11 @@ func (h *Handler) handleInitialize(ctx context.Context, conn *jsonrpc2.Conn, req
 			Prompts   interface{} `json:"prompts,omitempty"`
 			Logging   interface{} `json:"logging,omitempty"`
 		} `json:"capabilities"`
-		ServerInfo struct {
+		ServerInfo   struct {
 			Name    string `json:"name"`
 			Version string `json:"version"`
 		} `json:"serverInfo"`
+		Instructions string `json:"instructions,omitempty"`
 	}{
 		ProtocolVersion: "2024-11-05",
 		ServerInfo: struct {
@@ -268,6 +269,17 @@ func (h *Handler) handleInitialize(ctx context.Context, conn *jsonrpc2.Conn, req
 			Name:    "google-mcp-server",
 			Version: VERSION,
 		},
+		Instructions: `Access Google Calendar, Drive, Gmail, Sheets, Docs, Slides, and Tasks. Multi-account: optional 'account' parameter on tools; use accounts_list to see configured accounts.
+
+For token-efficient or scripted workflows (e.g. a skill, cron job, or one-off script), prefer writing a Python script that calls the same logic directly instead of using MCP tool calls. Install from the repo: cd python && uv pip install -e . Same OAuth config (config.json, ~/.google-mcp-accounts/). Example:
+
+  from google_mcp import (
+    calendar_events_list, drive_files_list, gmail_messages_list,
+    calendar_list, drive_markdown_upload, gmail_message_get, accounts_list,
+  )
+  events = calendar_events_list("primary", max_results=10)
+  files = drive_files_list(parent_id="root")
+  messages = gmail_messages_list(query="is:unread")`,
 	}
 
 	// Set capabilities
