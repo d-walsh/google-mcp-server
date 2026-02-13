@@ -1,4 +1,4 @@
-.PHONY: build test clean install run lint fmt install-tools set-version
+.PHONY: build test clean install run lint fmt install-tools set-version gitleaks
 
 # Variables
 BINARY_NAME=google-mcp-server
@@ -50,7 +50,12 @@ install-tools:
 	@$(GO) install golang.org/x/vuln/cmd/govulncheck@latest
 	@$(GO) install github.com/securego/gosec/v2/cmd/gosec@latest
 	@$(GO) install honnef.co/go/tools/cmd/staticcheck@latest
+	@$(GO) install github.com/gitleaks/gitleaks/v8@latest
 	@echo "Development tools installed successfully!"
+
+# Run gitleaks secret detection (requires gitleaks binary: make install-tools)
+gitleaks:
+	gitleaks detect --no-git --verbose
 
 # Download dependencies
 deps:
@@ -109,6 +114,7 @@ help:
 	@echo "  lint          - Run linter"
 	@echo "  fmt           - Format code"
 	@echo "  install-tools - Install development tools"
+	@echo "  gitleaks      - Run secret detection (requires gitleaks binary)"
 	@echo "  deps          - Download dependencies"
 	@echo "  update-deps   - Update dependencies"
 	@echo "  build-all     - Build for all platforms"
