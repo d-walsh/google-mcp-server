@@ -19,6 +19,7 @@ type OAuthCallbackServer struct {
 	server       *http.Server
 	authCodeChan chan string
 	errorChan    chan error
+	readyChan    chan struct{}
 	port         int
 	oauthState   string
 }
@@ -29,6 +30,7 @@ func NewOAuthCallbackServer(config *oauth2.Config) *OAuthCallbackServer {
 		config:       config,
 		authCodeChan: make(chan string, 1),
 		errorChan:    make(chan error, 1),
+		readyChan:    make(chan struct{}),
 		port:         8080,
 	}
 }
@@ -75,6 +77,9 @@ func (s *OAuthCallbackServer) StartAndWaitForCallback(ctx context.Context) (*oau
 		return nil, fmt.Errorf("failed to generate OAuth state: %w", err)
 	}
 	s.oauthState = hex.EncodeToString(stateBytes)
+
+	// Signal that the server is ready and auth URL is available
+	close(s.readyChan)
 
 	// Generate auth URL with random state
 	authURL := s.config.AuthCodeURL(s.oauthState, oauth2.AccessTypeOffline)
@@ -215,6 +220,11 @@ func (s *OAuthCallbackServer) handleRoot(w http.ResponseWriter, r *http.Request)
     <a href="%s" class="button">Authenticate with Google</a>
 </body>
 </html>`, authURL)
+}
+
+// Ready returns a channel that is closed when the server is listening and the auth URL is available
+func (s *OAuthCallbackServer) Ready() <-chan struct{} {
+	return s.readyChan
 }
 
 // GetAuthURL returns the OAuth authorization URL

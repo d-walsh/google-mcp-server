@@ -47,8 +47,19 @@ func (h *MultiAccountHandler) getClientForAccount(ctx context.Context, account *
 
 // HandleToolCall routes tool calls to the appropriate account
 func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, arguments json.RawMessage) (interface{}, error) {
+	// Extract account hint from arguments
+	var accountHint string
+	if arguments != nil {
+		var args map[string]interface{}
+		if err := json.Unmarshal(arguments, &args); err == nil {
+			if account, ok := args["account"].(string); ok {
+				accountHint = account
+			}
+		}
+	}
+
 	// Get account from context
-	account, err := h.accountManager.GetAccountForContext(ctx, "")
+	account, err := h.accountManager.GetAccountForContext(ctx, accountHint)
 	if err != nil || account == nil {
 		// Try to use the first available account
 		accounts := h.accountManager.ListAccounts()
@@ -81,14 +92,25 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 
 // GetTools returns the list of available tools
 func (h *MultiAccountHandler) GetTools() []server.Tool {
+	var tools []server.Tool
 	// Use default client or create a temporary one for tool definitions
 	if h.defaultClient != nil {
 		handler := NewHandler(h.defaultClient)
-		return handler.GetTools()
+		tools = handler.GetTools()
 	}
-	// Return empty tools list if no default client
-	// Tools will be registered when an account is added
-	return []server.Tool{}
+
+	// Add account parameter to existing tools
+	for i := range tools {
+		if tools[i].InputSchema.Properties == nil {
+			tools[i].InputSchema.Properties = make(map[string]server.Property)
+		}
+		tools[i].InputSchema.Properties["account"] = server.Property{
+			Type:        "string",
+			Description: "Email address of the account to use (optional)",
+		}
+	}
+
+	return tools
 }
 
 // GetResources returns the list of available resources

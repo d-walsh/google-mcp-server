@@ -351,11 +351,10 @@ func (h *Handler) handleToolCall(ctx context.Context, conn *jsonrpc2.Conn, req *
 	// Call the tool
 	result, err := handler.HandleToolCall(ctx, params.Name, params.Arguments)
 	if err != nil {
-		// Log full error to stderr, return generic message to client
 		fmt.Fprintf(os.Stderr, "Error in tool %s: %v\n", params.Name, err)
 		if err := conn.ReplyWithError(ctx, req.ID, &jsonrpc2.Error{
 			Code:    jsonrpc2.CodeInternalError,
-			Message: "internal error",
+			Message: err.Error(),
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "Error sending reply: %v\n", err)
 		}

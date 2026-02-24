@@ -350,13 +350,18 @@ func (am *AccountManager) RefreshToken(ctx context.Context, email string) error 
 	tokenSource := am.oauthConfig.TokenSource(ctx, account.Token)
 	newToken, err := tokenSource.Token()
 	if err != nil {
-		return fmt.Errorf("failed to refresh token: %w", err)
+		if strings.Contains(err.Error(), "invalid_grant") {
+			return fmt.Errorf("refresh token for %s has been revoked or expired. Run accounts_add to re-authenticate", email)
+		}
+		return fmt.Errorf("failed to refresh token for %s: %w", email, err)
 	}
 
 	// Re-acquire lock before writing token fields to prevent races
 	am.mu.Lock()
 	account.Token = newToken
 	account.OAuthClient.token = newToken
+	// Recreate httpClient so the internal oauth2 transport uses the new token
+	account.OAuthClient.httpClient = am.oauthConfig.Client(ctx, newToken)
 	am.mu.Unlock()
 
 	return am.saveAccount(account)
