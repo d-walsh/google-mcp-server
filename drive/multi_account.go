@@ -45,39 +45,25 @@ func (mac *MultiAccountClient) GetClientForContext(ctx context.Context, hint str
 	// First try to get a specific account based on the hint
 	account, err := mac.accountManager.GetAccountForContext(ctx, hint)
 	if err == nil && account != nil {
-		mac.mu.RLock()
-		client, exists := mac.clients[account.Email]
-		mac.mu.RUnlock()
-
-		if exists {
-			return client, account.Email, nil
-		}
-
-		// Create client on demand if not exists
+		// Always create a fresh Drive service using the current httpClient.
+		// Caching the service is unsafe because accounts_refresh updates the
+		// httpClient in-place; a cached service would retain the stale client.
 		service, err := drive.NewService(ctx, option.WithHTTPClient(account.OAuthClient.GetHTTPClient()))
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to create drive service: %w", err)
 		}
-
-		newClient := &Client{service: service}
-		mac.mu.Lock()
-		mac.clients[account.Email] = newClient
-		mac.mu.Unlock()
-
-		return newClient, account.Email, nil
+		return &Client{service: service}, account.Email, nil
 	}
 
 	// If context is unclear but only one account exists, use it
 	accounts := mac.accountManager.ListAccounts()
 	if len(accounts) == 1 {
-		email := accounts[0].Email
-		mac.mu.RLock()
-		client, exists := mac.clients[email]
-		mac.mu.RUnlock()
-
-		if exists {
-			return client, email, nil
+		account := accounts[0]
+		service, err := drive.NewService(ctx, option.WithHTTPClient(account.OAuthClient.GetHTTPClient()))
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to create drive service: %w", err)
 		}
+		return &Client{service: service}, account.Email, nil
 	}
 
 	// Return error with available accounts
