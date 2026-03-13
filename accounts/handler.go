@@ -258,15 +258,10 @@ func (h *Handler) handleAccountsAdd(ctx context.Context) (interface{}, error) {
 		fmt.Fprintf(os.Stderr, "Successfully added account: %s\n", account.Email)
 	}()
 
-	// Wait for server to be ready (listener bound + state generated)
-	select {
-	case <-callbackServer.Ready():
-		// Server is listening and auth URL is available
-	case <-time.After(5 * time.Second):
-		return nil, fmt.Errorf("OAuth callback server failed to start within 5 seconds")
-	}
+	// Wait a moment for server to start
+	time.Sleep(100 * time.Millisecond)
 
-	// Use the real auth URL from the callback server (with correct state parameter)
+	// Return the auth URL for the user to open (uses the cryptographically random state from callbackServer)
 	authURL := callbackServer.GetAuthURL()
 
 	return map[string]interface{}{
