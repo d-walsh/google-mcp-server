@@ -47,13 +47,10 @@ func main() {
 	}
 	log.Printf("[INFO] Account manager initialized with %d accounts\n", len(accountManager.ListAccounts()))
 
-	// For backward compatibility, create a default OAuth client
-	oauthClient, err := auth.NewOAuthClient(ctx, cfg.OAuth)
-	if err != nil {
-		// Don't fail if no default client - multi-account mode
-		log.Printf("[INFO] No default OAuth client, using multi-account mode\n")
-		oauthClient = nil
-	}
+	// Legacy default OAuth client disabled — all services use AccountManager
+	// for proper token refresh. The legacy client cached a stale httpClient
+	// that was never updated by accounts_refresh or auto-refresh.
+	var oauthClient *auth.OAuthClient // always nil
 
 	// Initialize MCP server
 	mcpServer := server.NewMCPServer(cfg)

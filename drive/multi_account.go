@@ -200,45 +200,44 @@ func NewMultiAccountHandler(accountManager *auth.AccountManager, defaultClient *
 
 // GetTools returns the available Drive tools with multi-account support
 func (h *MultiAccountHandler) GetTools() []server.Tool {
-	// Get original tools from handler
-	if h.handler != nil {
-		tools := h.handler.GetTools()
+	// Tool definitions are static and don't require a live client
+	handler := h.handler
+	if handler == nil {
+		handler = NewHandler(nil)
+	}
+	tools := handler.GetTools()
 
-		// Add account parameter to existing tools
-		for i := range tools {
-			if tools[i].InputSchema.Properties == nil {
-				tools[i].InputSchema.Properties = make(map[string]server.Property)
-			}
-			tools[i].InputSchema.Properties["account"] = server.Property{
-				Type:        "string",
-				Description: "Email address of the account to use (optional)",
-			}
+	// Add account parameter to existing tools
+	for i := range tools {
+		if tools[i].InputSchema.Properties == nil {
+			tools[i].InputSchema.Properties = make(map[string]server.Property)
 		}
-
-		// Add new multi-account specific tools
-		tools = append(tools, server.Tool{
-			Name:        "drive_files_list_all_accounts",
-			Description: "List files from all authenticated accounts",
-			InputSchema: server.InputSchema{
-				Type: "object",
-				Properties: map[string]server.Property{
-					"parent_id": {
-						Type:        "string",
-						Description: "Parent folder ID (optional, defaults to root)",
-					},
-					"page_size": {
-						Type:        "number",
-						Description: "Number of files per account (max 1000)",
-					},
-				},
-			},
-		})
-
-		return tools
+		tools[i].InputSchema.Properties["account"] = server.Property{
+			Type:        "string",
+			Description: "Email address of the account to use (optional)",
+		}
 	}
 
-	// Return empty if no handler
-	return []server.Tool{}
+	// Add new multi-account specific tools
+	tools = append(tools, server.Tool{
+		Name:        "drive_files_list_all_accounts",
+		Description: "List files from all authenticated accounts",
+		InputSchema: server.InputSchema{
+			Type: "object",
+			Properties: map[string]server.Property{
+				"parent_id": {
+					Type:        "string",
+					Description: "Parent folder ID (optional, defaults to root)",
+				},
+				"page_size": {
+					Type:        "number",
+					Description: "Number of files per account (max 1000)",
+				},
+			},
+		},
+	})
+
+	return tools
 }
 
 // HandleToolCall handles a tool call for Drive service with multi-account support

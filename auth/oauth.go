@@ -351,6 +351,7 @@ func (c *OAuthClient) refreshToken(ctx context.Context) {
 
 	c.mu.Lock()
 	c.token = newToken
+	c.httpClient = c.config.Client(ctx, newToken)
 	c.mu.Unlock()
 
 	// Save the new token

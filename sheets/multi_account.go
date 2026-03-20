@@ -92,12 +92,9 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 
 // GetTools returns the list of available tools
 func (h *MultiAccountHandler) GetTools() []server.Tool {
-	var tools []server.Tool
-	// Use default client or create a temporary one for tool definitions
-	if h.defaultClient != nil {
-		handler := NewHandler(h.defaultClient)
-		tools = handler.GetTools()
-	}
+	// Tool definitions are static and don't require a live client
+	handler := NewHandler(nil)
+	tools := handler.GetTools()
 
 	// Add account parameter to existing tools
 	for i := range tools {

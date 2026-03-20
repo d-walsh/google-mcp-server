@@ -2,6 +2,7 @@ package gmail
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -148,10 +149,15 @@ func NewMultiAccountHandler(accountManager *auth.AccountManager, defaultClient *
 
 // GetTools returns the available Gmail tools with multi-account support
 func (h *MultiAccountHandler) GetTools() []server.Tool {
+	accountProp := server.Property{
+		Type:        "string",
+		Description: "Email address of the account to use (optional)",
+	}
+
 	return []server.Tool{
 		{
 			Name:        "gmail_messages_list",
-			Description: "List email messages",
+			Description: "List email messages with snippet, subject, from, and date for each message",
 			InputSchema: server.InputSchema{
 				Type: "object",
 				Properties: map[string]server.Property{
@@ -163,10 +169,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "number",
 						Description: "Maximum number of results",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": accountProp,
 				},
 			},
 		},
@@ -180,10 +183,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Message ID",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": accountProp,
 				},
 				Required: []string{"message_id"},
 			},
@@ -205,7 +205,248 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 				},
 			},
 		},
+		{
+			Name:        "gmail_send",
+			Description: "Compose and send a new email",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"to": {
+						Type:        "string",
+						Description: "Recipient email address(es), comma-separated",
+					},
+					"subject": {
+						Type:        "string",
+						Description: "Email subject",
+					},
+					"body": {
+						Type:        "string",
+						Description: "Email body content",
+					},
+					"cc": {
+						Type:        "string",
+						Description: "CC recipients, comma-separated (optional)",
+					},
+					"bcc": {
+						Type:        "string",
+						Description: "BCC recipients, comma-separated (optional)",
+					},
+					"content_type": {
+						Type:        "string",
+						Description: "Content type: 'text/plain' (default) or 'text/html'",
+					},
+					"account": accountProp,
+				},
+				Required: []string{"to", "subject", "body"},
+			},
+		},
+		{
+			Name:        "gmail_reply",
+			Description: "Reply to an existing email thread",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"message_id": {
+						Type:        "string",
+						Description: "Message ID to reply to",
+					},
+					"body": {
+						Type:        "string",
+						Description: "Reply body content",
+					},
+					"reply_all": {
+						Type:        "boolean",
+						Description: "Reply to all recipients (default: true)",
+					},
+					"content_type": {
+						Type:        "string",
+						Description: "Content type: 'text/plain' (default) or 'text/html'",
+					},
+					"account": accountProp,
+				},
+				Required: []string{"message_id", "body"},
+			},
+		},
+		{
+			Name:        "gmail_download_attachment",
+			Description: "Download an email attachment by message ID and attachment ID",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"message_id": {
+						Type:        "string",
+						Description: "Message ID containing the attachment",
+					},
+					"attachment_id": {
+						Type:        "string",
+						Description: "Attachment ID to download",
+					},
+					"account": accountProp,
+				},
+				Required: []string{"message_id", "attachment_id"},
+			},
+		},
+		{
+			Name:        "gmail_labels_list",
+			Description: "List all Gmail labels",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"account": accountProp,
+				},
+			},
+		},
+		{
+			Name:        "gmail_label_add",
+			Description: "Add label(s) to a message",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"message_id": {
+						Type:        "string",
+						Description: "Message ID",
+					},
+					"label_ids": {
+						Type:        "array",
+						Description: "Label IDs to add",
+						Items: &server.Property{
+							Type: "string",
+						},
+					},
+					"account": accountProp,
+				},
+				Required: []string{"message_id", "label_ids"},
+			},
+		},
+		{
+			Name:        "gmail_label_remove",
+			Description: "Remove label(s) from a message",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"message_id": {
+						Type:        "string",
+						Description: "Message ID",
+					},
+					"label_ids": {
+						Type:        "array",
+						Description: "Label IDs to remove",
+						Items: &server.Property{
+							Type: "string",
+						},
+					},
+					"account": accountProp,
+				},
+				Required: []string{"message_id", "label_ids"},
+			},
+		},
+		{
+			Name:        "gmail_draft_create",
+			Description: "Create a new email draft",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"to": {
+						Type:        "string",
+						Description: "Recipient email address(es), comma-separated",
+					},
+					"subject": {
+						Type:        "string",
+						Description: "Email subject",
+					},
+					"body": {
+						Type:        "string",
+						Description: "Email body content",
+					},
+					"cc": {
+						Type:        "string",
+						Description: "CC recipients, comma-separated (optional)",
+					},
+					"content_type": {
+						Type:        "string",
+						Description: "Content type: 'text/plain' (default) or 'text/html'",
+					},
+					"thread_id": {
+						Type:        "string",
+						Description: "Thread ID for reply drafts (optional)",
+					},
+					"account": accountProp,
+				},
+			},
+		},
+		{
+			Name:        "gmail_trash",
+			Description: "Move a message to trash",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"message_id": {
+						Type:        "string",
+						Description: "Message ID to trash",
+					},
+					"account": accountProp,
+				},
+				Required: []string{"message_id"},
+			},
+		},
+		{
+			Name:        "gmail_untrash",
+			Description: "Remove a message from trash",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"message_id": {
+						Type:        "string",
+						Description: "Message ID to untrash",
+					},
+					"account": accountProp,
+				},
+				Required: []string{"message_id"},
+			},
+		},
+		{
+			Name:        "gmail_mark_read",
+			Description: "Mark a message as read",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"message_id": {
+						Type:        "string",
+						Description: "Message ID to mark as read",
+					},
+					"account": accountProp,
+				},
+				Required: []string{"message_id"},
+			},
+		},
+		{
+			Name:        "gmail_label_create",
+			Description: "Create a new Gmail label",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"name": {
+						Type:        "string",
+						Description: "Label name",
+					},
+					"account": accountProp,
+				},
+				Required: []string{"name"},
+			},
+		},
 	}
+}
+
+// getClientOrDefault resolves the client for a given account hint, falling back to default
+func (h *MultiAccountHandler) getClientOrDefault(ctx context.Context, account string) (*Client, string, error) {
+	client, accountUsed, err := h.multiClient.GetClientForContext(ctx, account)
+	if err != nil {
+		if h.client != nil {
+			return h.client, "default", nil
+		}
+		return nil, "", err
+	}
+	return client, accountUsed, nil
 }
 
 // HandleToolCall handles a tool call for Gmail service with multi-account support
@@ -221,16 +462,9 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 			return nil, fmt.Errorf("invalid arguments: %w", err)
 		}
 
-		// Try to get client for specified account
-		client, accountUsed, err := h.multiClient.GetClientForContext(ctx, args.Account)
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
 		if err != nil {
-			// Fall back to default client if available
-			if h.client != nil {
-				client = h.client
-				accountUsed = "default"
-			} else {
-				return nil, err
-			}
+			return nil, err
 		}
 
 		messages, err := client.ListMessages(args.Query, int64(args.MaxResults))
@@ -238,13 +472,34 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 			return nil, err
 		}
 
-		// Format messages for response
-		messageList := make([]map[string]interface{}, len(messages))
-		for i, msg := range messages {
-			messageList[i] = map[string]interface{}{
+		// Enrich each message with metadata (snippet, subject, from, date, labels)
+		messageList := make([]map[string]interface{}, 0, len(messages))
+		for _, msg := range messages {
+			entry := map[string]interface{}{
 				"id":       msg.Id,
 				"threadId": msg.ThreadId,
 			}
+
+			// Fetch metadata for richer listing
+			meta, metaErr := client.GetMessageMetadata(msg.Id)
+			if metaErr == nil && meta != nil {
+				entry["snippet"] = meta.Snippet
+				entry["labelIds"] = meta.LabelIds
+				if meta.Payload != nil {
+					for _, h := range meta.Payload.Headers {
+						switch strings.ToLower(h.Name) {
+						case "subject":
+							entry["subject"] = h.Value
+						case "from":
+							entry["from"] = h.Value
+						case "date":
+							entry["date"] = h.Value
+						}
+					}
+				}
+			}
+
+			messageList = append(messageList, entry)
 		}
 		return map[string]interface{}{
 			"messages": messageList,
@@ -260,16 +515,9 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 			return nil, fmt.Errorf("invalid arguments: %w", err)
 		}
 
-		// Try to get client for specified account
-		client, accountUsed, err := h.multiClient.GetClientForContext(ctx, args.Account)
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
 		if err != nil {
-			// Fall back to default client if available
-			if h.client != nil {
-				client = h.client
-				accountUsed = "default"
-			} else {
-				return nil, err
-			}
+			return nil, err
 		}
 
 		message, err := client.GetMessage(args.MessageID)
@@ -277,7 +525,6 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 			return nil, err
 		}
 
-		// Format message for response
 		result := map[string]interface{}{
 			"id":           message.Id,
 			"threadId":     message.ThreadId,
@@ -289,7 +536,6 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 			"account":      accountUsed,
 		}
 
-		// Extract headers for easier access
 		if message.Payload != nil && message.Payload.Headers != nil {
 			headers := make(map[string]string)
 			for _, header := range message.Payload.Headers {
@@ -297,9 +543,26 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 			}
 			result["headers"] = headers
 
-			// Add body if available
 			if message.Payload.Body != nil && message.Payload.Body.Data != "" {
 				result["body"] = message.Payload.Body.Data
+			}
+
+			// Include attachment info from parts
+			if message.Payload.Parts != nil {
+				var attachments []map[string]interface{}
+				for _, part := range message.Payload.Parts {
+					if part.Filename != "" && part.Body != nil && part.Body.AttachmentId != "" {
+						attachments = append(attachments, map[string]interface{}{
+							"filename":     part.Filename,
+							"mimeType":     part.MimeType,
+							"size":         part.Body.Size,
+							"attachmentId": part.Body.AttachmentId,
+						})
+					}
+				}
+				if len(attachments) > 0 {
+					result["attachments"] = attachments
+				}
 			}
 		}
 
@@ -314,19 +577,16 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 			return nil, fmt.Errorf("invalid arguments: %w", err)
 		}
 
-		// Default query to inbox if not specified
 		query := args.Query
 		if query == "" {
 			query = "in:inbox"
 		}
 
-		// Search across all accounts
 		results, err := h.multiClient.SearchAcrossAccounts(ctx, query, int64(args.MaxResults))
 		if err != nil {
 			return nil, err
 		}
 
-		// Format results
 		formattedResults := make(map[string]interface{})
 		totalMessages := 0
 		for email, messages := range results {
@@ -350,8 +610,345 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 			"account_count": len(results),
 		}, nil
 
+	case "gmail_send":
+		var args struct {
+			To          string `json:"to"`
+			Subject     string `json:"subject"`
+			Body        string `json:"body"`
+			Cc          string `json:"cc"`
+			Bcc         string `json:"bcc"`
+			ContentType string `json:"content_type"`
+			Account     string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		sent, err := client.SendMessage(args.To, args.Subject, args.Body, args.Cc, args.Bcc, args.ContentType)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"id":       sent.Id,
+			"threadId": sent.ThreadId,
+			"labelIds": sent.LabelIds,
+			"account":  accountUsed,
+		}, nil
+
+	case "gmail_reply":
+		var args struct {
+			MessageID   string `json:"message_id"`
+			Body        string `json:"body"`
+			ReplyAll    *bool  `json:"reply_all"`
+			ContentType string `json:"content_type"`
+			Account     string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		// Default reply_all to true
+		replyAll := true
+		if args.ReplyAll != nil {
+			replyAll = *args.ReplyAll
+		}
+
+		sent, err := client.ReplyToMessage(args.MessageID, args.Body, replyAll, args.ContentType)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"id":       sent.Id,
+			"threadId": sent.ThreadId,
+			"labelIds": sent.LabelIds,
+			"account":  accountUsed,
+		}, nil
+
+	case "gmail_download_attachment":
+		var args struct {
+			MessageID    string `json:"message_id"`
+			AttachmentID string `json:"attachment_id"`
+			Account      string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		attachment, err := client.GetAttachment(args.MessageID, args.AttachmentID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Also get the message to find the filename
+		message, msgErr := client.GetMessage(args.MessageID)
+		filename := ""
+		mimeType := ""
+		if msgErr == nil && message.Payload != nil {
+			for _, part := range message.Payload.Parts {
+				if part.Body != nil && part.Body.AttachmentId == args.AttachmentID {
+					filename = part.Filename
+					mimeType = part.MimeType
+					break
+				}
+			}
+		}
+
+		// The attachment data from Gmail API is base64url-encoded
+		// Decode it and re-encode as standard base64 for the response
+		decoded, decErr := base64.URLEncoding.DecodeString(attachment.Data)
+		var data string
+		if decErr == nil {
+			data = base64.StdEncoding.EncodeToString(decoded)
+		} else {
+			// Fall back to raw data if decode fails
+			data = attachment.Data
+		}
+
+		return map[string]interface{}{
+			"data":     data,
+			"size":     attachment.Size,
+			"filename": filename,
+			"mimeType": mimeType,
+			"account":  accountUsed,
+		}, nil
+
+	case "gmail_labels_list":
+		var args struct {
+			Account string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		labels, err := client.ListLabels()
+		if err != nil {
+			return nil, err
+		}
+
+		labelList := make([]map[string]interface{}, len(labels))
+		for i, label := range labels {
+			labelList[i] = map[string]interface{}{
+				"id":   label.Id,
+				"name": label.Name,
+				"type": label.Type,
+			}
+		}
+
+		return map[string]interface{}{
+			"labels":  labelList,
+			"account": accountUsed,
+		}, nil
+
+	case "gmail_label_add":
+		var args struct {
+			MessageID string   `json:"message_id"`
+			LabelIDs  []string `json:"label_ids"`
+			Account   string   `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		message, err := client.ModifyMessageLabels(args.MessageID, args.LabelIDs, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"id":       message.Id,
+			"labelIds": message.LabelIds,
+			"account":  accountUsed,
+		}, nil
+
+	case "gmail_label_remove":
+		var args struct {
+			MessageID string   `json:"message_id"`
+			LabelIDs  []string `json:"label_ids"`
+			Account   string   `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		message, err := client.ModifyMessageLabels(args.MessageID, nil, args.LabelIDs)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"id":       message.Id,
+			"labelIds": message.LabelIds,
+			"account":  accountUsed,
+		}, nil
+
+	case "gmail_draft_create":
+		var args struct {
+			To          string `json:"to"`
+			Subject     string `json:"subject"`
+			Body        string `json:"body"`
+			Cc          string `json:"cc"`
+			ContentType string `json:"content_type"`
+			ThreadID    string `json:"thread_id"`
+			Account     string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		draft, err := client.CreateDraft(args.To, args.Subject, args.Body, args.Cc, args.ContentType, args.ThreadID)
+		if err != nil {
+			return nil, err
+		}
+
+		result := map[string]interface{}{
+			"id":      draft.Id,
+			"account": accountUsed,
+		}
+		if draft.Message != nil {
+			result["messageId"] = draft.Message.Id
+			result["threadId"] = draft.Message.ThreadId
+		}
+
+		return result, nil
+
+	case "gmail_trash":
+		var args struct {
+			MessageID string `json:"message_id"`
+			Account   string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		message, err := client.TrashMessage(args.MessageID)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"id":       message.Id,
+			"labelIds": message.LabelIds,
+			"account":  accountUsed,
+		}, nil
+
+	case "gmail_untrash":
+		var args struct {
+			MessageID string `json:"message_id"`
+			Account   string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		message, err := client.UntrashMessage(args.MessageID)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"id":       message.Id,
+			"labelIds": message.LabelIds,
+			"account":  accountUsed,
+		}, nil
+
+	case "gmail_mark_read":
+		var args struct {
+			MessageID string `json:"message_id"`
+			Account   string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		message, err := client.ModifyMessageLabels(args.MessageID, nil, []string{"UNREAD"})
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"id":       message.Id,
+			"labelIds": message.LabelIds,
+			"account":  accountUsed,
+		}, nil
+
+	case "gmail_label_create":
+		var args struct {
+			Name    string `json:"name"`
+			Account string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		label, err := client.CreateLabel(args.Name)
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"id":      label.Id,
+			"name":    label.Name,
+			"account": accountUsed,
+		}, nil
+
 	default:
-		// Fall back to original handler for backward compatibility
 		if h.client != nil {
 			handler := &Handler{client: h.client}
 			return handler.HandleToolCall(ctx, name, arguments)
