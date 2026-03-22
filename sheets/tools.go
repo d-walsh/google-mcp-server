@@ -200,6 +200,76 @@ func (h *Handler) GetTools() []server.Tool {
 				Required: []string{"spreadsheet_id", "sheet_id", "new_title"},
 			},
 		},
+		{
+			Name:        "sheets_format_as_table",
+			Description: "Apply table formatting to a data range: bold header row with dark blue background (#1a73e8) and white text, frozen header row, alternating row shading (light gray on even rows), thin borders around all cells, and auto-resized columns",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"range": {
+						Type:        "string",
+						Description: "A1 notation range to format (e.g., 'A1:D10'). If omitted, formats all data in the sheet",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id"},
+			},
+		},
+		{
+			Name:        "sheets_auto_resize_columns",
+			Description: "Auto-resize columns to fit their content",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"start_column": {
+						Type:        "number",
+						Description: "Start column index (0-indexed, default 0)",
+					},
+					"end_column": {
+						Type:        "number",
+						Description: "End column index (0-indexed, exclusive). If omitted, resizes all columns",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id"},
+			},
+		},
+		{
+			Name:        "sheets_freeze_rows",
+			Description: "Freeze rows at the top of the sheet so they remain visible when scrolling",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"num_rows": {
+						Type:        "number",
+						Description: "Number of rows to freeze (default 1). Set to 0 to unfreeze",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id"},
+			},
+		},
 	}
 }
 
@@ -398,6 +468,71 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 		return map[string]interface{}{
 			"status":   "renamed",
 			"newTitle": args.NewTitle,
+		}, nil
+
+	case "sheets_format_as_table":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			Range         string  `json:"range"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.FormatAsTable(args.SpreadsheetID, int64(args.SheetID), args.Range); err != nil {
+			return nil, err
+		}
+		result := map[string]interface{}{
+			"status": "formatted",
+		}
+		if args.Range != "" {
+			result["range"] = args.Range
+		}
+		return result, nil
+
+	case "sheets_auto_resize_columns":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			SheetID       float64  `json:"sheet_id"`
+			StartColumn   *float64 `json:"start_column"`
+			EndColumn     *float64 `json:"end_column"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		var startCol, endCol int64
+		if args.StartColumn != nil {
+			startCol = int64(*args.StartColumn)
+		}
+		if args.EndColumn != nil {
+			endCol = int64(*args.EndColumn)
+		}
+		if err := h.client.AutoResizeColumns(args.SpreadsheetID, int64(args.SheetID), startCol, endCol); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status": "resized",
+		}, nil
+
+	case "sheets_freeze_rows":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			SheetID       float64  `json:"sheet_id"`
+			NumRows       *float64 `json:"num_rows"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		numRows := int64(1) // default
+		if args.NumRows != nil {
+			numRows = int64(*args.NumRows)
+		}
+		if err := h.client.FreezeRows(args.SpreadsheetID, int64(args.SheetID), numRows); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":     "frozen",
+			"frozenRows": numRows,
 		}, nil
 
 	default:
