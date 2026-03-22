@@ -1127,6 +1127,32 @@ func (h *Handler) GetTools() []server.Tool {
 				Required: []string{"spreadsheet_id", "sheet_id", "domain_range", "data_range"},
 			},
 		},
+		{
+			Name:        "sheets_get_sheet_layout",
+			Description: "Get a complete spatial map of a sheet — where data lives, where charts are, and where empty space is. Use this before placing charts or data to prevent overlap. Returns data extent, chart positions with cell footprints, occupied ranges, and suggested placements.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"col_width_px": {
+						Type:        "number",
+						Description: "Assumed column width in pixels for chart footprint calculation (default 100)",
+					},
+					"row_height_px": {
+						Type:        "number",
+						Description: "Assumed row height in pixels for chart footprint calculation (default 21)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id"},
+			},
+		},
 	}
 }
 
@@ -2276,6 +2302,30 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 			result["chartId"] = chartResp.Chart.ChartId
 		}
 		return result, nil
+
+	case "sheets_get_sheet_layout":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			SheetID       float64  `json:"sheet_id"`
+			ColWidthPx    *float64 `json:"col_width_px"`
+			RowHeightPx   *float64 `json:"row_height_px"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		colWidthPx := float64(100)
+		if args.ColWidthPx != nil {
+			colWidthPx = *args.ColWidthPx
+		}
+		rowHeightPx := float64(21)
+		if args.RowHeightPx != nil {
+			rowHeightPx = *args.RowHeightPx
+		}
+		layout, err := h.client.GetSheetLayout(args.SpreadsheetID, int64(args.SheetID), colWidthPx, rowHeightPx)
+		if err != nil {
+			return nil, err
+		}
+		return layout, nil
 
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)

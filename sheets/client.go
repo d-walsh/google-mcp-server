@@ -3,6 +3,10 @@ package sheets
 import (
 	"context"
 	"fmt"
+	"math"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"go.ngs.io/google-mcp-server/auth"
 	"google.golang.org/api/sheets/v4"
@@ -1869,4 +1873,477 @@ func (c *Client) CreateWaterfallChart(spreadsheetID string, sheetID int64, domai
 		return resp.Replies[0].AddChart, nil
 	}
 	return nil, fmt.Errorf("no reply from add waterfall chart request")
+}
+
+// colIndexToLetter converts a 0-based column index to a column letter (0=A, 25=Z, 26=AA, etc.)
+func colIndexToLetter(idx int) string {
+	result := ""
+	for idx >= 0 {
+		result = string(rune('A'+idx%26)) + result
+		idx = idx/26 - 1
+	}
+	return result
+}
+
+// GetSheetLayout returns a spatial map of a sheet: data extent, chart positions/footprints,
+// occupied ranges, and suggested placements for new content.
+func (c *Client) GetSheetLayout(spreadsheetID string, sheetID int64, colWidthPx, rowHeightPx float64) (map[string]interface{}, error) {
+	// Defaults
+	if colWidthPx <= 0 {
+		colWidthPx = 100
+	}
+	if rowHeightPx <= 0 {
+		rowHeightPx = 21
+	}
+
+	// 1. Get sheet properties, charts, merges, banded ranges, and named ranges
+	spreadsheet, err := c.service.Spreadsheets.Get(spreadsheetID).Fields("sheets(properties,charts,merges,bandedRanges),namedRanges").Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get spreadsheet: %w", err)
+	}
+
+	// Find the target sheet
+	var targetSheet *sheets.Sheet
+	for _, s := range spreadsheet.Sheets {
+		if s.Properties.SheetId == sheetID {
+			targetSheet = s
+			break
+		}
+	}
+	if targetSheet == nil {
+		return nil, fmt.Errorf("sheet with ID %d not found", sheetID)
+	}
+
+	sheetTitle := targetSheet.Properties.Title
+	gridRows := targetSheet.Properties.GridProperties.RowCount
+	gridCols := targetSheet.Properties.GridProperties.ColumnCount
+	frozenRows := targetSheet.Properties.GridProperties.FrozenRowCount
+	frozenCols := targetSheet.Properties.GridProperties.FrozenColumnCount
+
+	// 2. Get data extent using Values.Get with just the sheet title
+	var dataLastRow, dataLastCol int
+	dataRegions := make([]map[string]interface{}, 0)
+
+	values, err := c.service.Spreadsheets.Values.Get(spreadsheetID, sheetTitle).Do()
+	if err != nil {
+		// If there's no data, that's fine — sheet may be empty
+		dataLastRow = 0
+		dataLastCol = 0
+	} else if values.Range != "" {
+		// Parse the returned range to get data extent
+		// Format is like "'Sheet Name'!A1:W67" or "Sheet1!A1:W67"
+		dataLastRow, dataLastCol = parseValuesRange(values.Range)
+
+		// Scan for data regions (contiguous column groups with data)
+		if len(values.Values) > 0 {
+			dataRegions = detectDataRegions(values.Values, dataLastRow)
+		}
+	}
+
+	// 3. Process charts — calculate footprints
+	chartInfos := make([]map[string]interface{}, 0)
+	for _, chart := range targetSheet.Charts {
+		info := map[string]interface{}{
+			"chartId": chart.ChartId,
+		}
+		if chart.Spec != nil && chart.Spec.Title != "" {
+			info["title"] = chart.Spec.Title
+		}
+
+		// Detect chart type
+		chartType := "UNKNOWN"
+		if chart.Spec != nil {
+			switch {
+			case chart.Spec.BasicChart != nil:
+				chartType = chart.Spec.BasicChart.ChartType
+			case chart.Spec.PieChart != nil:
+				chartType = "PIE"
+			case chart.Spec.WaterfallChart != nil:
+				chartType = "WATERFALL"
+			case chart.Spec.HistogramChart != nil:
+				chartType = "HISTOGRAM"
+			case chart.Spec.BubbleChart != nil:
+				chartType = "BUBBLE"
+			case chart.Spec.CandlestickChart != nil:
+				chartType = "CANDLESTICK"
+			case chart.Spec.OrgChart != nil:
+				chartType = "ORG"
+			case chart.Spec.TreemapChart != nil:
+				chartType = "TREEMAP"
+			case chart.Spec.ScorecardChart != nil:
+				chartType = "SCORECARD"
+			}
+		}
+		info["type"] = chartType
+
+		// Position and footprint
+		if chart.Position != nil && chart.Position.OverlayPosition != nil {
+			overlay := chart.Position.OverlayPosition
+			anchorRow := int64(0)
+			anchorCol := int64(0)
+			if overlay.AnchorCell != nil {
+				anchorRow = overlay.AnchorCell.RowIndex
+				anchorCol = overlay.AnchorCell.ColumnIndex
+			}
+			widthPx := overlay.WidthPixels
+			heightPx := overlay.HeightPixels
+			if widthPx <= 0 {
+				widthPx = 600 // default chart width
+			}
+			if heightPx <= 0 {
+				heightPx = 371 // default chart height
+			}
+
+			info["anchor"] = map[string]interface{}{
+				"row": anchorRow,
+				"col": anchorCol,
+			}
+			info["sizePx"] = map[string]interface{}{
+				"width":  widthPx,
+				"height": heightPx,
+			}
+
+			// Calculate cell footprint
+			endCol := anchorCol + int64(math.Ceil(float64(widthPx)/colWidthPx))
+			endRow := anchorRow + int64(math.Ceil(float64(heightPx)/rowHeightPx))
+
+			footprint := map[string]interface{}{
+				"startRow": anchorRow,
+				"endRow":   endRow,
+				"startCol": anchorCol,
+				"endCol":   endCol,
+			}
+			info["footprint"] = footprint
+
+			startLetter := colIndexToLetter(int(anchorCol))
+			endLetter := colIndexToLetter(int(endCol) - 1)
+			info["description"] = fmt.Sprintf("Occupies %s%d:%s%d", startLetter, anchorRow+1, endLetter, endRow)
+		}
+
+		chartInfos = append(chartInfos, info)
+	}
+
+	// 4. Process merged cells
+	mergedRanges := make([]map[string]interface{}, 0)
+	for _, merge := range targetSheet.Merges {
+		startLetter := colIndexToLetter(int(merge.StartColumnIndex))
+		endLetter := colIndexToLetter(int(merge.EndColumnIndex) - 1)
+		mergedRanges = append(mergedRanges, map[string]interface{}{
+			"startRow":    merge.StartRowIndex,
+			"endRow":      merge.EndRowIndex,
+			"startCol":    merge.StartColumnIndex,
+			"endCol":      merge.EndColumnIndex,
+			"description": fmt.Sprintf("Merged %s%d:%s%d", startLetter, merge.StartRowIndex+1, endLetter, merge.EndRowIndex),
+		})
+	}
+
+	// 5. Process banded ranges
+	bandedRanges := make([]map[string]interface{}, 0)
+	for _, banded := range targetSheet.BandedRanges {
+		if banded.Range != nil {
+			startLetter := colIndexToLetter(int(banded.Range.StartColumnIndex))
+			endLetter := colIndexToLetter(int(banded.Range.EndColumnIndex) - 1)
+			bandedRanges = append(bandedRanges, map[string]interface{}{
+				"bandedRangeId": banded.BandedRangeId,
+				"startRow":      banded.Range.StartRowIndex,
+				"endRow":        banded.Range.EndRowIndex,
+				"startCol":      banded.Range.StartColumnIndex,
+				"endCol":        banded.Range.EndColumnIndex,
+				"description":   fmt.Sprintf("Banding %s%d:%s%d", startLetter, banded.Range.StartRowIndex+1, endLetter, banded.Range.EndRowIndex),
+			})
+		}
+	}
+
+	// 5b. Process named ranges (filter to this sheet)
+	namedRanges := make([]map[string]interface{}, 0)
+	for _, named := range spreadsheet.NamedRanges {
+		if named.Range != nil && named.Range.SheetId == sheetID {
+			startLetter := colIndexToLetter(int(named.Range.StartColumnIndex))
+			endLetter := colIndexToLetter(int(named.Range.EndColumnIndex) - 1)
+			namedRanges = append(namedRanges, map[string]interface{}{
+				"name":     named.Name,
+				"rangeId":  named.NamedRangeId,
+				"startRow": named.Range.StartRowIndex,
+				"endRow":   named.Range.EndRowIndex,
+				"startCol": named.Range.StartColumnIndex,
+				"endCol":   named.Range.EndColumnIndex,
+				"description": fmt.Sprintf("%s: %s%d:%s%d", named.Name,
+					startLetter, named.Range.StartRowIndex+1, endLetter, named.Range.EndRowIndex),
+			})
+		}
+	}
+
+	// 6. Build occupied ranges
+	occupiedRanges := make([]map[string]interface{}, 0)
+
+	// Add data regions as occupied
+	for _, region := range dataRegions {
+		occupiedRanges = append(occupiedRanges, map[string]interface{}{
+			"startRow": region["startRow"],
+			"endRow":   region["endRow"],
+			"startCol": region["startCol"],
+			"endCol":   region["endCol"],
+			"type":     "data",
+		})
+	}
+
+	// Add chart footprints as occupied
+	for _, chartInfo := range chartInfos {
+		if fp, ok := chartInfo["footprint"].(map[string]interface{}); ok {
+			occupiedRanges = append(occupiedRanges, map[string]interface{}{
+				"startRow": fp["startRow"],
+				"endRow":   fp["endRow"],
+				"startCol": fp["startCol"],
+				"endCol":   fp["endCol"],
+				"type":     "chart",
+			})
+		}
+	}
+
+	// Add merged cell ranges as occupied
+	for _, merge := range mergedRanges {
+		occupiedRanges = append(occupiedRanges, map[string]interface{}{
+			"startRow": merge["startRow"],
+			"endRow":   merge["endRow"],
+			"startCol": merge["startCol"],
+			"endCol":   merge["endCol"],
+			"type":     "merged",
+		})
+	}
+
+	// Add banded ranges as occupied
+	for _, banded := range bandedRanges {
+		occupiedRanges = append(occupiedRanges, map[string]interface{}{
+			"startRow": banded["startRow"],
+			"endRow":   banded["endRow"],
+			"startCol": banded["startCol"],
+			"endCol":   banded["endCol"],
+			"type":     "banding",
+		})
+	}
+
+	// 7. Calculate suggested placements
+	// Find the maximum extents across all occupied ranges
+	maxDataCol := dataLastCol
+	maxChartRow := 0
+	maxChartCol := 0
+	maxOccupiedCol := dataLastCol
+	maxOccupiedRow := dataLastRow
+
+	for _, chartInfo := range chartInfos {
+		if fp, ok := chartInfo["footprint"].(map[string]interface{}); ok {
+			if endRow, ok := fp["endRow"].(int64); ok && int(endRow) > maxChartRow {
+				maxChartRow = int(endRow)
+			}
+			if endCol, ok := fp["endCol"].(int64); ok && int(endCol) > maxChartCol {
+				maxChartCol = int(endCol)
+			}
+			if endRow, ok := fp["endRow"].(int64); ok && int(endRow) > maxOccupiedRow {
+				maxOccupiedRow = int(endRow)
+			}
+			if endCol, ok := fp["endCol"].(int64); ok && int(endCol) > maxOccupiedCol {
+				maxOccupiedCol = int(endCol)
+			}
+		}
+	}
+
+	// Also account for merged cell extents
+	for _, merge := range mergedRanges {
+		if endRow, ok := merge["endRow"].(int64); ok && int(endRow) > maxOccupiedRow {
+			maxOccupiedRow = int(endRow)
+		}
+		if endCol, ok := merge["endCol"].(int64); ok && int(endCol) > maxOccupiedCol {
+			maxOccupiedCol = int(endCol)
+		}
+	}
+
+	// Also account for banded range extents
+	for _, banded := range bandedRanges {
+		if endRow, ok := banded["endRow"].(int64); ok && int(endRow) > maxOccupiedRow {
+			maxOccupiedRow = int(endRow)
+		}
+		if endCol, ok := banded["endCol"].(int64); ok && int(endCol) > maxOccupiedCol {
+			maxOccupiedCol = int(endCol)
+		}
+	}
+
+	rightOfDataCol := maxDataCol + 2 // +1 for gap
+	belowChartsRow := maxChartRow + 2 // +2 for gap
+	if maxChartRow == 0 {
+		belowChartsRow = dataLastRow + 2
+	}
+	farRightCol := maxOccupiedCol + 2
+
+	suggestedPlacements := map[string]interface{}{
+		"rightOfData": map[string]interface{}{
+			"row":         0,
+			"col":         rightOfDataCol,
+			"description": fmt.Sprintf("First empty column after main data (col %s/index %d)", colIndexToLetter(rightOfDataCol), rightOfDataCol),
+		},
+		"belowCharts": map[string]interface{}{
+			"row":         belowChartsRow,
+			"col":         maxDataCol + 2,
+			"description": fmt.Sprintf("First empty row below all charts (row %d)", belowChartsRow+1),
+		},
+		"farRight": map[string]interface{}{
+			"row":         0,
+			"col":         farRightCol,
+			"description": fmt.Sprintf("Well clear of all data and charts (col %s/index %d)", colIndexToLetter(farRightCol), farRightCol),
+		},
+	}
+
+	// Build data range description
+	dataRangeDesc := "No data"
+	if dataLastRow > 0 || dataLastCol > 0 {
+		dataRangeDesc = fmt.Sprintf("Data extends to row %d, column %s (index %d)", dataLastRow, colIndexToLetter(dataLastCol-1), dataLastCol)
+	}
+
+	// 8. Assemble result
+	result := map[string]interface{}{
+		"sheetId": sheetID,
+		"title":   sheetTitle,
+		"gridSize": map[string]interface{}{
+			"rows": gridRows,
+			"cols": gridCols,
+		},
+		"frozenRows":    frozenRows,
+		"frozenColumns": frozenCols,
+		"dataRange": map[string]interface{}{
+			"lastRow":     dataLastRow,
+			"lastCol":     dataLastCol,
+			"description": dataRangeDesc,
+		},
+		"dataRegions":         dataRegions,
+		"mergedCells":         mergedRanges,
+		"bandedRanges":        bandedRanges,
+		"namedRanges":         namedRanges,
+		"charts":              chartInfos,
+		"occupiedRanges":      occupiedRanges,
+		"suggestedPlacements": suggestedPlacements,
+		"note":                "Formatted areas (background colors, borders, alternating rows) typically align with data regions and banded ranges. Treat the full data region and banding bounding boxes as occupied to avoid placing charts over formatted cells.",
+	}
+
+	return result, nil
+}
+
+// parseValuesRange parses a range string like "'Cash Flow'!A1:W67" and returns (lastRow, lastCol) as integers.
+// lastRow and lastCol are 1-indexed counts (i.e., the number of rows/cols with data).
+func parseValuesRange(rangeStr string) (lastRow int, lastCol int) {
+	// Strip sheet name prefix (handle both quoted and unquoted)
+	if idx := strings.LastIndex(rangeStr, "!"); idx >= 0 {
+		rangeStr = rangeStr[idx+1:]
+	}
+
+	// Split on ':'
+	parts := strings.SplitN(rangeStr, ":", 2)
+	if len(parts) != 2 {
+		return 0, 0
+	}
+
+	// Parse the end cell (e.g., "W67")
+	endCell := parts[1]
+	re := regexp.MustCompile(`^([A-Za-z]+)(\d+)$`)
+	matches := re.FindStringSubmatch(endCell)
+	if len(matches) != 3 {
+		return 0, 0
+	}
+
+	// Column letters to number
+	colLetters := strings.ToUpper(matches[1])
+	col := 0
+	for _, ch := range colLetters {
+		col = col*26 + int(ch-'A'+1)
+	}
+	lastCol = col
+
+	// Row number
+	row, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return 0, 0
+	}
+	lastRow = row
+
+	return lastRow, lastCol
+}
+
+// detectDataRegions scans values to identify contiguous column groups that contain data.
+func detectDataRegions(values [][]interface{}, totalRows int) []map[string]interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+
+	// Find the maximum number of columns across all rows
+	maxCols := 0
+	for _, row := range values {
+		if len(row) > maxCols {
+			maxCols = len(row)
+		}
+	}
+
+	if maxCols == 0 {
+		return nil
+	}
+
+	// For each column, determine if it has any data and its row extent
+	type colInfo struct {
+		hasData bool
+		lastRow int // 0-indexed
+	}
+	colData := make([]colInfo, maxCols)
+	for rowIdx, row := range values {
+		for colIdx, cell := range row {
+			if cell != nil && fmt.Sprintf("%v", cell) != "" {
+				colData[colIdx].hasData = true
+				colData[colIdx].lastRow = rowIdx
+			}
+		}
+	}
+
+	// Group contiguous columns with data into regions
+	regions := make([]map[string]interface{}, 0)
+	inRegion := false
+	regionStart := 0
+	regionMaxRow := 0
+
+	for colIdx := 0; colIdx < maxCols; colIdx++ {
+		if colData[colIdx].hasData {
+			if !inRegion {
+				inRegion = true
+				regionStart = colIdx
+				regionMaxRow = 0
+			}
+			if colData[colIdx].lastRow > regionMaxRow {
+				regionMaxRow = colData[colIdx].lastRow
+			}
+		} else {
+			if inRegion {
+				// End current region
+				startLetter := colIndexToLetter(regionStart)
+				endLetter := colIndexToLetter(colIdx - 1)
+				regions = append(regions, map[string]interface{}{
+					"startRow":    0,
+					"endRow":      regionMaxRow + 1,
+					"startCol":    regionStart,
+					"endCol":      colIdx,
+					"description": fmt.Sprintf("Data %s1:%s%d", startLetter, endLetter, regionMaxRow+1),
+				})
+				inRegion = false
+			}
+		}
+	}
+
+	// Close final region if still open
+	if inRegion {
+		startLetter := colIndexToLetter(regionStart)
+		endLetter := colIndexToLetter(maxCols - 1)
+		regions = append(regions, map[string]interface{}{
+			"startRow":    0,
+			"endRow":      regionMaxRow + 1,
+			"startCol":    regionStart,
+			"endCol":      maxCols,
+			"description": fmt.Sprintf("Data %s1:%s%d", startLetter, endLetter, regionMaxRow+1),
+		})
+	}
+
+	return regions
 }
