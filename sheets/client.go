@@ -1318,6 +1318,148 @@ func (c *Client) UpdateChartPosition(spreadsheetID string, chartID int64, sheetI
 	return nil
 }
 
+// SetNumberFormat sets the number format for a range of cells
+func (c *Client) SetNumberFormat(spreadsheetID string, sheetID int64, rangeA1 string, formatType string, pattern string) error {
+	gridRange, err := parseA1Range(rangeA1, sheetID)
+	if err != nil {
+		return fmt.Errorf("failed to parse range %q: %w", rangeA1, err)
+	}
+
+	numberFormat := &sheets.NumberFormat{
+		Type: formatType,
+	}
+	if pattern != "" {
+		numberFormat.Pattern = pattern
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				RepeatCell: &sheets.RepeatCellRequest{
+					Range: gridRange,
+					Cell: &sheets.CellData{
+						UserEnteredFormat: &sheets.CellFormat{
+							NumberFormat: numberFormat,
+						},
+					},
+					Fields: "userEnteredFormat.numberFormat",
+				},
+			},
+		},
+	}
+	_, err = c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to set number format: %w", err)
+	}
+	return nil
+}
+
+// AddNote adds a note to a cell
+func (c *Client) AddNote(spreadsheetID string, sheetID int64, rangeA1 string, note string) error {
+	gridRange, err := parseA1Range(rangeA1, sheetID)
+	if err != nil {
+		return fmt.Errorf("failed to parse range %q: %w", rangeA1, err)
+	}
+
+	// Ensure it targets a single cell (use start of range)
+	gridRange.EndRowIndex = gridRange.StartRowIndex + 1
+	gridRange.EndColumnIndex = gridRange.StartColumnIndex + 1
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				UpdateCells: &sheets.UpdateCellsRequest{
+					Range: gridRange,
+					Rows: []*sheets.RowData{
+						{
+							Values: []*sheets.CellData{
+								{
+									Note: note,
+								},
+							},
+						},
+					},
+					Fields: "note",
+				},
+			},
+		},
+	}
+	_, err = c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to add note: %w", err)
+	}
+	return nil
+}
+
+// SetSheetVisibility hides or shows a sheet tab
+func (c *Client) SetSheetVisibility(spreadsheetID string, sheetID int64, hidden bool) error {
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				UpdateSheetProperties: &sheets.UpdateSheetPropertiesRequest{
+					Properties: &sheets.SheetProperties{
+						SheetId: sheetID,
+						Hidden:  hidden,
+					},
+					Fields: "hidden",
+				},
+			},
+		},
+	}
+	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		action := "show"
+		if hidden {
+			action = "hide"
+		}
+		return fmt.Errorf("failed to %s sheet: %w", action, err)
+	}
+	return nil
+}
+
+// SetRowHeight sets the height of rows in a range
+func (c *Client) SetRowHeight(spreadsheetID string, sheetID int64, startIndex int64, endIndex int64, height int64) error {
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				UpdateDimensionProperties: &sheets.UpdateDimensionPropertiesRequest{
+					Range: &sheets.DimensionRange{
+						SheetId:    sheetID,
+						Dimension:  "ROWS",
+						StartIndex: startIndex,
+						EndIndex:   endIndex,
+					},
+					Properties: &sheets.DimensionProperties{
+						PixelSize: height,
+					},
+					Fields: "pixelSize",
+				},
+			},
+		},
+	}
+	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to set row height: %w", err)
+	}
+	return nil
+}
+
+// BatchUpdateValues writes values to multiple ranges in one call
+func (c *Client) BatchUpdateValues(spreadsheetID string, data []sheets.ValueRange) (*sheets.BatchUpdateValuesResponse, error) {
+	batchReq := &sheets.BatchUpdateValuesRequest{
+		ValueInputOption: "USER_ENTERED",
+		Data:             make([]*sheets.ValueRange, len(data)),
+	}
+	for i := range data {
+		batchReq.Data[i] = &data[i]
+	}
+	resp, err := c.service.Spreadsheets.Values.BatchUpdate(spreadsheetID, batchReq).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch update values: %w", err)
+	}
+	return resp, nil
+}
+
 // CreateWaterfallChart creates a waterfall chart with customizable colors and subtotals
 func (c *Client) CreateWaterfallChart(spreadsheetID string, sheetID int64, domainRange string, dataRange string, title string, subtotalIndices []int64, positionRow int64, positionCol int64, width int64, height int64, positiveColor *sheets.Color, negativeColor *sheets.Color, subtotalColor *sheets.Color) (*sheets.AddChartResponse, error) {
 	domainGrid, err := parseA1Range(domainRange, sheetID)

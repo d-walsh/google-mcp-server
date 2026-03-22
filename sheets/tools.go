@@ -884,6 +884,133 @@ func (h *Handler) GetTools() []server.Tool {
 			},
 		},
 		{
+			Name:        "sheets_set_number_format",
+			Description: "Set the number format for a range of cells (currency, percent, date, number, text, scientific)",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"range": {
+						Type:        "string",
+						Description: "A1 notation range (e.g., 'B2:B100')",
+					},
+					"format_type": {
+						Type:        "string",
+						Description: "Number format type",
+						Enum:        []string{"CURRENCY", "PERCENT", "DATE", "NUMBER", "TEXT", "SCIENTIFIC"},
+					},
+					"pattern": {
+						Type:        "string",
+						Description: "Optional format pattern (e.g., '$#,##0.00', '0.00%', 'yyyy-mm-dd', '#,##0.00'). If omitted, uses the default for the format type.",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "range", "format_type"},
+			},
+		},
+		{
+			Name:        "sheets_add_note",
+			Description: "Add a note (yellow sticky comment) to a single cell",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"range": {
+						Type:        "string",
+						Description: "A1 notation for a single cell (e.g., 'A1:A1' or 'C5:C5')",
+					},
+					"note": {
+						Type:        "string",
+						Description: "Note text to add to the cell. Set to empty string to remove an existing note.",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "range", "note"},
+			},
+		},
+		{
+			Name:        "sheets_set_sheet_visibility",
+			Description: "Hide or show a sheet tab in a spreadsheet",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"hidden": {
+						Type:        "boolean",
+						Description: "True to hide the sheet, false to show it",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "hidden"},
+			},
+		},
+		{
+			Name:        "sheets_set_row_height",
+			Description: "Set the height of rows in a range",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"start_index": {
+						Type:        "number",
+						Description: "0-indexed first row",
+					},
+					"end_index": {
+						Type:        "number",
+						Description: "0-indexed exclusive end row",
+					},
+					"height": {
+						Type:        "number",
+						Description: "Row height in pixels",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "start_index", "end_index", "height"},
+			},
+		},
+		{
+			Name:        "sheets_batch_update_values",
+			Description: "Write values to multiple ranges in one call. More efficient than multiple sheets_values_update calls.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"data": {
+						Type:        "array",
+						Description: "Array of {range, values} objects. Each range is A1 notation (e.g., 'Sheet1!A1:B2'), values is a 2D array.",
+					},
+				},
+				Required: []string{"spreadsheet_id", "data"},
+			},
+		},
+		{
 			Name:        "sheets_create_waterfall_chart",
 			Description: "Create a waterfall chart with positive/negative/subtotal bar coloring. Useful for budget breakdowns, P&L waterfalls, and variance analysis.",
 			InputSchema: server.InputSchema{
@@ -1851,6 +1978,117 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 		return map[string]interface{}{
 			"status":  "position_updated",
 			"chartId": int64(args.ChartID),
+		}, nil
+
+	case "sheets_set_number_format":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			Range         string  `json:"range"`
+			FormatType    string  `json:"format_type"`
+			Pattern       string  `json:"pattern"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.SetNumberFormat(args.SpreadsheetID, int64(args.SheetID), args.Range, args.FormatType, args.Pattern); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":     "number_format_set",
+			"range":      args.Range,
+			"formatType": args.FormatType,
+			"pattern":    args.Pattern,
+		}, nil
+
+	case "sheets_add_note":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			Range         string  `json:"range"`
+			Note          string  `json:"note"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.AddNote(args.SpreadsheetID, int64(args.SheetID), args.Range, args.Note); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status": "note_added",
+			"range":  args.Range,
+		}, nil
+
+	case "sheets_set_sheet_visibility":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			Hidden        bool    `json:"hidden"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.SetSheetVisibility(args.SpreadsheetID, int64(args.SheetID), args.Hidden); err != nil {
+			return nil, err
+		}
+		status := "shown"
+		if args.Hidden {
+			status = "hidden"
+		}
+		return map[string]interface{}{
+			"status": status,
+		}, nil
+
+	case "sheets_set_row_height":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			StartIndex    float64 `json:"start_index"`
+			EndIndex      float64 `json:"end_index"`
+			Height        float64 `json:"height"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.SetRowHeight(args.SpreadsheetID, int64(args.SheetID), int64(args.StartIndex), int64(args.EndIndex), int64(args.Height)); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":     "row_height_set",
+			"startIndex": args.StartIndex,
+			"endIndex":   args.EndIndex,
+			"height":     args.Height,
+		}, nil
+
+	case "sheets_batch_update_values":
+		var args struct {
+			SpreadsheetID string `json:"spreadsheet_id"`
+			Data          []struct {
+				Range  string          `json:"range"`
+				Values [][]interface{} `json:"values"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		valueRanges := make([]sheets.ValueRange, len(args.Data))
+		for i, d := range args.Data {
+			valueRanges[i] = sheets.ValueRange{
+				Range:  d.Range,
+				Values: d.Values,
+			}
+		}
+		resp, err := h.client.BatchUpdateValues(args.SpreadsheetID, valueRanges)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":                "values_updated",
+			"spreadsheetId":         resp.SpreadsheetId,
+			"totalUpdatedRows":      resp.TotalUpdatedRows,
+			"totalUpdatedColumns":   resp.TotalUpdatedColumns,
+			"totalUpdatedCells":     resp.TotalUpdatedCells,
+			"totalUpdatedSheets":    resp.TotalUpdatedSheets,
 		}, nil
 
 	case "sheets_create_waterfall_chart":

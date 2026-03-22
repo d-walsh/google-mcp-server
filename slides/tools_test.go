@@ -29,6 +29,8 @@ func TestServiceGetTools(t *testing.T) {
 		"slides_add_image",
 		"slides_add_table",
 		"slides_add_shape",
+		"slides_update_text",
+		"slides_read_slide",
 		"slides_set_layout",
 		"slides_export_pdf",
 		"slides_share",

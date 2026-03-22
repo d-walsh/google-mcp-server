@@ -407,6 +407,54 @@ func (s *Service) GetTools() []server.Tool {
 			},
 		},
 		{
+			Name:        "slides_update_text",
+			Description: "Replace all text in an existing shape or text box on a slide. Clears the existing text first, then inserts new text.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"presentation_id": {
+						Type:        "string",
+						Description: "Presentation ID",
+					},
+					"page_object_id": {
+						Type:        "string",
+						Description: "Object ID of the shape/text box to update (from slides_presentation_get or slides_read_slide)",
+					},
+					"text": {
+						Type:        "string",
+						Description: "New text content",
+					},
+					"account": {
+						Type:        "string",
+						Description: "Email address of the account to use (optional)",
+					},
+				},
+				Required: []string{"presentation_id", "page_object_id", "text"},
+			},
+		},
+		{
+			Name:        "slides_read_slide",
+			Description: "Read all text content from a specific slide by index. Returns text from all shapes, tables, and other elements.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"presentation_id": {
+						Type:        "string",
+						Description: "Presentation ID",
+					},
+					"slide_index": {
+						Type:        "number",
+						Description: "Slide index (0-indexed)",
+					},
+					"account": {
+						Type:        "string",
+						Description: "Email address of the account to use (optional)",
+					},
+				},
+				Required: []string{"presentation_id", "slide_index"},
+			},
+		},
+		{
 			Name:        "slides_share",
 			Description: "Create a shareable link for a presentation",
 			InputSchema: server.InputSchema{
@@ -766,6 +814,104 @@ func (s *Service) HandleToolCall(ctx context.Context, name string, arguments jso
 			return nil, err
 		}
 		return map[string]interface{}{"success": true}, nil
+
+	case "slides_update_text":
+		presentationId, _ := args["presentation_id"].(string)
+		pageObjectId, _ := args["page_object_id"].(string)
+		text, _ := args["text"].(string)
+
+		// First delete existing text, then insert new text
+		_, err = client.DeleteTextInPlaceholder(presentationId, pageObjectId)
+		if err != nil {
+			// If delete fails (e.g., shape has no text), try inserting directly
+			_, err = client.InsertTextInPlaceholder(presentationId, pageObjectId, text)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update text: %w", err)
+			}
+		} else {
+			// Delete succeeded, now insert new text
+			_, err = client.InsertTextInPlaceholder(presentationId, pageObjectId, text)
+			if err != nil {
+				return nil, fmt.Errorf("text deleted but failed to insert new text: %w", err)
+			}
+		}
+		return map[string]interface{}{"success": true, "page_object_id": pageObjectId}, nil
+
+	case "slides_read_slide":
+		presentationId, _ := args["presentation_id"].(string)
+		slideIndex := int(getFloatOrDefault(args, "slide_index", 0))
+
+		presentation, err := client.GetPresentation(presentationId)
+		if err != nil {
+			return nil, err
+		}
+
+		if slideIndex < 0 || slideIndex >= len(presentation.Slides) {
+			return nil, fmt.Errorf("slide index %d out of range (presentation has %d slides)", slideIndex, len(presentation.Slides))
+		}
+
+		slide := presentation.Slides[slideIndex]
+		elements := make([]map[string]interface{}, 0)
+
+		for _, element := range slide.PageElements {
+			elementInfo := map[string]interface{}{
+				"element_id": element.ObjectId,
+			}
+
+			if element.Shape != nil {
+				elementInfo["type"] = "shape"
+				if element.Shape.ShapeType != "" {
+					elementInfo["shape_type"] = element.Shape.ShapeType
+				}
+				if element.Shape.Placeholder != nil {
+					elementInfo["placeholder_type"] = element.Shape.Placeholder.Type
+				}
+				if element.Shape.Text != nil && len(element.Shape.Text.TextElements) > 0 {
+					text := ""
+					for _, te := range element.Shape.Text.TextElements {
+						if te.TextRun != nil {
+							text += te.TextRun.Content
+						}
+					}
+					elementInfo["text"] = text
+				}
+			} else if element.Table != nil {
+				elementInfo["type"] = "table"
+				elementInfo["rows"] = element.Table.Rows
+				elementInfo["columns"] = element.Table.Columns
+				// Extract table cell text
+				tableData := make([][]string, 0)
+				for _, row := range element.Table.TableRows {
+					rowData := make([]string, 0)
+					for _, cell := range row.TableCells {
+						cellText := ""
+						if cell.Text != nil {
+							for _, te := range cell.Text.TextElements {
+								if te.TextRun != nil {
+									cellText += te.TextRun.Content
+								}
+							}
+						}
+						rowData = append(rowData, cellText)
+					}
+					tableData = append(tableData, rowData)
+				}
+				elementInfo["data"] = tableData
+			} else if element.Image != nil {
+				elementInfo["type"] = "image"
+				if element.Image.ContentUrl != "" {
+					elementInfo["url"] = element.Image.ContentUrl
+				}
+			}
+
+			elements = append(elements, elementInfo)
+		}
+
+		return map[string]interface{}{
+			"slide_id":    slide.ObjectId,
+			"slide_index": slideIndex,
+			"elements":    elements,
+		}, nil
 
 	case "slides_set_layout":
 		presentationId, _ := args["presentation_id"].(string)
