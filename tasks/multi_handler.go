@@ -16,14 +16,12 @@ import (
 // MultiAccountHandler implements the ServiceHandler interface with multi-account support
 type MultiAccountHandler struct {
 	accountManager *auth.AccountManager
-	defaultClient  *Client // For backward compatibility
 }
 
 // NewMultiAccountHandler creates a new multi-account aware Tasks handler
-func NewMultiAccountHandler(accountManager *auth.AccountManager, defaultClient *Client) *MultiAccountHandler {
+func NewMultiAccountHandler(accountManager *auth.AccountManager) *MultiAccountHandler {
 	return &MultiAccountHandler{
 		accountManager: accountManager,
-		defaultClient:  defaultClient,
 	}
 }
 
@@ -37,10 +35,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 			InputSchema: server.InputSchema{
 				Type: "object",
 				Properties: map[string]server.Property{
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 			},
 		},
@@ -62,10 +57,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "The ID of the task list",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id"},
 			},
@@ -80,10 +72,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Title of the new task list",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"title"},
 			},
@@ -102,10 +91,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "New title for the task list",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id", "title"},
 			},
@@ -120,10 +106,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "The ID of the task list to delete",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id"},
 			},
@@ -159,10 +142,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Upper bound for task due date (RFC3339 format)",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id"},
 			},
@@ -181,10 +161,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "The ID of the task",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id", "task_id"},
 			},
@@ -215,10 +192,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Parent task ID to create this as a subtask",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id", "title"},
 			},
@@ -254,10 +228,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Description: "Task status: 'needsAction' or 'completed'",
 						Enum:        []string{"needsAction", "completed"},
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id", "task_id"},
 			},
@@ -276,10 +247,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "The ID of the task to delete",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id", "task_id"},
 			},
@@ -298,10 +266,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "The ID of the task to complete",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id", "task_id"},
 			},
@@ -328,10 +293,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "ID of the task to position after (empty for first position)",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id", "task_id"},
 			},
@@ -346,10 +308,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "The ID of the task list to clear completed tasks from",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"tasklist_id"},
 			},
@@ -369,11 +328,6 @@ func (h *MultiAccountHandler) HandleResourceCall(ctx context.Context, uri string
 
 // getClientForAccount gets or creates a tasks client for the specified account
 func (h *MultiAccountHandler) getClientForAccount(ctx context.Context, email string) (*Client, error) {
-	// If no email specified, use default client
-	if email == "" && h.defaultClient != nil {
-		return h.defaultClient, nil
-	}
-
 	// Resolve account — requires explicit account when multiple exist
 	account, err := h.accountManager.ResolveAccount(ctx, email)
 	if err != nil {

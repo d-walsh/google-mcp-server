@@ -779,12 +779,6 @@ func (c *Client) AddShape(presentationId string, slideId string, shapeType strin
 	return c.service.Presentations.BatchUpdate(presentationId, req).Do()
 }
 
-func (c *Client) ApplyTemplate(presentationId string, templateId string) (*slides.BatchUpdatePresentationResponse, error) {
-	// This would require fetching the template and applying its layouts
-	// Complex operation that might need multiple API calls
-	return nil, fmt.Errorf("template application not yet implemented")
-}
-
 func (c *Client) SetSlideLayout(presentationId string, slideId string, layoutId string) (*slides.BatchUpdatePresentationResponse, error) {
 	requests := []*slides.Request{
 		{

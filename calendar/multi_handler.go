@@ -17,14 +17,12 @@ import (
 // MultiAccountHandler implements the ServiceHandler interface with multi-account support
 type MultiAccountHandler struct {
 	accountManager *auth.AccountManager
-	defaultClient  *Client // For backward compatibility
 }
 
 // NewMultiAccountHandler creates a new multi-account aware Calendar handler
-func NewMultiAccountHandler(accountManager *auth.AccountManager, defaultClient *Client) *MultiAccountHandler {
+func NewMultiAccountHandler(accountManager *auth.AccountManager) *MultiAccountHandler {
 	return &MultiAccountHandler{
 		accountManager: accountManager,
-		defaultClient:  defaultClient,
 	}
 }
 
@@ -38,10 +36,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 			InputSchema: server.InputSchema{
 				Type: "object",
 				Properties: map[string]server.Property{
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 			},
 		},
@@ -67,10 +62,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "number",
 						Description: "Maximum number of events to return",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"calendar_id"},
 			},
@@ -119,10 +111,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 							Type: "number",
 						},
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"calendar_id", "summary", "start_time", "end_time"},
 			},
@@ -161,10 +150,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "End time (RFC3339 format)",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"calendar_id", "event_id"},
 			},
@@ -183,10 +169,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Event ID",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"calendar_id", "event_id"},
 			},
@@ -205,10 +188,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Event ID",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"calendar_id", "event_id"},
 			},
@@ -234,10 +214,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "End time (RFC3339 format)",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"calendar_ids", "time_min", "time_max"},
 			},
@@ -264,10 +241,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "End time (RFC3339 format)",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"calendar_id", "query"},
 			},
@@ -302,10 +276,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "number",
 						Description: "End of working hours (0-23, default: 17)",
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"calendar_id", "time_min", "time_max"},
 			},
@@ -329,10 +300,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Description: "Response status",
 						Enum:        []string{"accepted", "declined", "tentative"},
 					},
-					"account": {
-						Type:        "string",
-						Description: "Email address of the account to use (optional)",
-					},
+					"account": server.AccountProperty,
 				},
 				Required: []string{"calendar_id", "event_id", "response"},
 			},
@@ -387,21 +355,12 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 	case "calendar_events_list_all_accounts":
 		return h.handleEventsListAllAccounts(ctx, arguments)
 	default:
-		// Fall back to default client for other operations
-		if h.defaultClient != nil {
-			origHandler := NewHandler(h.defaultClient)
-			return origHandler.HandleToolCall(ctx, name, arguments)
-		}
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
 }
 
 // getClientForAccount gets or creates a calendar client for the specified account
 func (h *MultiAccountHandler) getClientForAccount(ctx context.Context, email string) (*Client, error) {
-	// If no email specified, use default client
-	if email == "" && h.defaultClient != nil {
-		return h.defaultClient, nil
-	}
 
 	// Get account from manager
 	account, err := h.accountManager.GetAccount(email)
@@ -1058,18 +1017,10 @@ func (h *MultiAccountHandler) handleEventsListAllAccounts(ctx context.Context, a
 
 // GetResources returns available resources
 func (h *MultiAccountHandler) GetResources() []server.Resource {
-	if h.defaultClient != nil {
-		origHandler := NewHandler(h.defaultClient)
-		return origHandler.GetResources()
-	}
 	return []server.Resource{}
 }
 
 // HandleResourceCall handles resource calls
 func (h *MultiAccountHandler) HandleResourceCall(ctx context.Context, uri string) (interface{}, error) {
-	if h.defaultClient != nil {
-		origHandler := NewHandler(h.defaultClient)
-		return origHandler.HandleResourceCall(ctx, uri)
-	}
 	return nil, fmt.Errorf("no default client available")
 }

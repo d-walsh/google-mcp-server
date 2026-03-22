@@ -11,7 +11,7 @@ import (
 func TestServiceGetTools(t *testing.T) {
 	// Create a mock auth manager
 	mockAuth := &auth.AccountManager{}
-	service := NewService(mockAuth)
+	service := NewMultiAccountHandler(mockAuth)
 
 	tools := service.GetTools()
 
@@ -34,7 +34,7 @@ func TestServiceGetTools(t *testing.T) {
 		"slides_set_layout",
 		"slides_export_pdf",
 		"slides_share",
-		// "slides_presentations_list_all_accounts" is in MultiAccountService, not Service
+		"slides_presentations_list_all_accounts",
 	}
 
 	if len(tools) != len(expectedTools) {
@@ -56,7 +56,7 @@ func TestServiceGetTools(t *testing.T) {
 
 func TestHandleToolCallErrors(t *testing.T) {
 	mockAuth := &auth.AccountManager{}
-	service := NewService(mockAuth)
+	service := NewMultiAccountHandler(mockAuth)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -120,7 +120,7 @@ func TestHandleToolCallErrors(t *testing.T) {
 
 func TestToolDescriptions(t *testing.T) {
 	mockAuth := &auth.AccountManager{}
-	service := NewService(mockAuth)
+	service := NewMultiAccountHandler(mockAuth)
 	tools := service.GetTools()
 
 	for _, tool := range tools {

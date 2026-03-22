@@ -18,18 +18,10 @@ import (
 
 // AccountManager manages multiple Google accounts
 type AccountManager struct {
-	accounts       map[string]*Account
-	configDir      string
-	oauthConfig    *oauth2.Config
-	defaultAccount string
-	mu             sync.RWMutex
-}
-
-// SetDefaultAccount sets the default account email used when no account is specified
-func (am *AccountManager) SetDefaultAccount(email string) {
-	am.mu.Lock()
-	defer am.mu.Unlock()
-	am.defaultAccount = email
+	accounts    map[string]*Account
+	configDir   string
+	oauthConfig *oauth2.Config
+	mu          sync.RWMutex
 }
 
 // ResolveAccount is the single shared entry point for all services to resolve an account.

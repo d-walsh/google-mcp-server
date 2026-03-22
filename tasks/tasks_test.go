@@ -57,7 +57,6 @@ func TestMultiAccountHandlerGetTools(t *testing.T) {
 	// Create a multi-account handler with nil dependencies (just testing tool definitions)
 	handler := &MultiAccountHandler{
 		accountManager: nil,
-		defaultClient:  nil,
 	}
 
 	tools := handler.GetTools()
@@ -168,7 +167,6 @@ func TestHandleToolCallUnknownTool(t *testing.T) {
 func TestMultiAccountHandlerUnknownTool(t *testing.T) {
 	handler := &MultiAccountHandler{
 		accountManager: nil,
-		defaultClient:  nil,
 	}
 
 	_, err := handler.HandleToolCall(context.Background(), "unknown_tool", json.RawMessage(`{}`))
@@ -260,7 +258,6 @@ func TestUpdateTaskOptions(t *testing.T) {
 func TestMultiAccountHandlerAccountProperty(t *testing.T) {
 	handler := &MultiAccountHandler{
 		accountManager: nil,
-		defaultClient:  nil,
 	}
 
 	tools := handler.GetTools()

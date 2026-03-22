@@ -24,14 +24,12 @@ var (
 // MultiAccountHandler handles docs operations across multiple Google accounts
 type MultiAccountHandler struct {
 	accountManager *auth.AccountManager
-	defaultClient  *Client
 }
 
 // NewMultiAccountHandler creates a new multi-account docs handler
-func NewMultiAccountHandler(accountManager *auth.AccountManager, defaultClient *Client) *MultiAccountHandler {
+func NewMultiAccountHandler(accountManager *auth.AccountManager) *MultiAccountHandler {
 	return &MultiAccountHandler{
 		accountManager: accountManager,
-		defaultClient:  defaultClient,
 	}
 }
 
@@ -74,25 +72,13 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 
 	// Get account from context
 	account, err := h.resolveAccount(ctx, accountHint)
-	if err != nil && h.defaultClient == nil {
+	if err != nil {
 		return nil, err
 	}
 
-	var client *Client
-	if account != nil {
-		client, err = h.getClientForAccount(ctx, account)
-		if err != nil {
-			// Fall back to default client if available
-			if h.defaultClient != nil {
-				client = h.defaultClient
-			} else {
-				return nil, err
-			}
-		}
-	} else if h.defaultClient != nil {
-		client = h.defaultClient
-	} else {
-		return nil, ErrNoAccount
+	client, err := h.getClientForAccount(ctx, account)
+	if err != nil {
+		return nil, err
 	}
 
 	// Delegate to the regular handler
@@ -152,10 +138,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 		if tools[i].InputSchema.Properties == nil {
 			tools[i].InputSchema.Properties = make(map[string]server.Property)
 		}
-		tools[i].InputSchema.Properties["account"] = server.Property{
-			Type:        "string",
-			Description: "Email address of the account to use (optional)",
-		}
+		tools[i].InputSchema.Properties["account"] = server.AccountProperty
 	}
 
 	// Add new tools
@@ -169,10 +152,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 					Type:        "string",
 					Description: "Document ID to export",
 				},
-				"account": {
-					Type:        "string",
-					Description: "Email address of the account to use (optional)",
-				},
+				"account": server.AccountProperty,
 			},
 			Required: []string{"document_id"},
 		},

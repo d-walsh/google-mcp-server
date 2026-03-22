@@ -54,6 +54,13 @@ type Property struct {
 	Enum        []string  `json:"enum,omitempty"`
 }
 
+// AccountProperty is the standard "account" parameter for all multi-account tools.
+// Use this instead of defining it inline in every tool.
+var AccountProperty = Property{
+	Type:        "string",
+	Description: "Email address of the account to use (optional)",
+}
+
 // Resource represents an MCP resource
 type Resource struct {
 	URI         string `json:"uri"`

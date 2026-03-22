@@ -144,11 +144,10 @@ func (mac *MultiAccountClient) ListFilesAcrossAccounts(ctx context.Context, pare
 // MultiAccountHandler handles Drive operations with multi-account support
 type MultiAccountHandler struct {
 	multiClient *MultiAccountClient
-	handler     *Handler // Original handler for backward compatibility
 }
 
 // NewMultiAccountHandler creates a new handler with multi-account support
-func NewMultiAccountHandler(accountManager *auth.AccountManager, defaultClient *Client) *MultiAccountHandler {
+func NewMultiAccountHandler(accountManager *auth.AccountManager) *MultiAccountHandler {
 	ctx := context.Background()
 	multiClient, err := NewMultiAccountClient(ctx, accountManager)
 	if err != nil {
@@ -160,25 +159,15 @@ func NewMultiAccountHandler(accountManager *auth.AccountManager, defaultClient *
 		}
 	}
 
-	// Create original handler for backward compatibility
-	var handler *Handler
-	if defaultClient != nil {
-		handler = NewHandler(defaultClient)
-	}
-
 	return &MultiAccountHandler{
 		multiClient: multiClient,
-		handler:     handler,
 	}
 }
 
 // GetTools returns the available Drive tools with multi-account support
 func (h *MultiAccountHandler) GetTools() []server.Tool {
 	// Tool definitions are static and don't require a live client
-	handler := h.handler
-	if handler == nil {
-		handler = NewHandler(nil)
-	}
+	handler := NewHandler(nil)
 	tools := handler.GetTools()
 
 	// Add account parameter to existing tools
@@ -186,10 +175,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 		if tools[i].InputSchema.Properties == nil {
 			tools[i].InputSchema.Properties = make(map[string]server.Property)
 		}
-		tools[i].InputSchema.Properties["account"] = server.Property{
-			Type:        "string",
-			Description: "Email address of the account to use (optional)",
-		}
+		tools[i].InputSchema.Properties["account"] = server.AccountProperty
 	}
 
 	// Add new multi-account specific tools
@@ -309,27 +295,15 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 		}
 	}
 
-	// Fall back to original handler for backward compatibility
-	if h.handler != nil {
-		return h.handler.HandleToolCall(ctx, name, arguments)
-	}
-
 	return nil, fmt.Errorf("no handler available for tool: %s", name)
 }
 
 // GetResources returns the available Drive resources
 func (h *MultiAccountHandler) GetResources() []server.Resource {
-	if h.handler != nil {
-		return h.handler.GetResources()
-	}
 	return []server.Resource{}
 }
 
 // HandleResourceCall handles a resource call for Drive service
 func (h *MultiAccountHandler) HandleResourceCall(ctx context.Context, uri string) (interface{}, error) {
-	// For now, delegate to original handler
-	if h.handler != nil {
-		return h.handler.HandleResourceCall(ctx, uri)
-	}
 	return nil, fmt.Errorf("no handler available for resource: %s", uri)
 }

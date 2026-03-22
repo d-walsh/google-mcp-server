@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"go.ngs.io/google-mcp-server/auth"
-	"google.golang.org/api/option"
 	"google.golang.org/api/tasks/v1"
 )
 
@@ -17,18 +16,6 @@ type Client struct {
 // NewClient creates a new Tasks client
 func NewClient(ctx context.Context, oauth *auth.OAuthClient) (*Client, error) {
 	service, err := tasks.NewService(ctx, oauth.GetClientOption())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tasks service: %w", err)
-	}
-
-	return &Client{
-		service: service,
-	}, nil
-}
-
-// NewClientWithHTTPClient creates a new Tasks client with an HTTP client
-func NewClientWithHTTPClient(ctx context.Context, httpClient option.ClientOption) (*Client, error) {
-	service, err := tasks.NewService(ctx, httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tasks service: %w", err)
 	}

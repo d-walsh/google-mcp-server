@@ -101,11 +101,10 @@ func (mac *MultiAccountClient) SearchAcrossAccounts(ctx context.Context, query s
 // MultiAccountHandler handles Gmail operations with multi-account support
 type MultiAccountHandler struct {
 	multiClient *MultiAccountClient
-	client      *Client // Default client for backward compatibility
 }
 
 // NewMultiAccountHandler creates a new handler with multi-account support
-func NewMultiAccountHandler(accountManager *auth.AccountManager, defaultClient *Client) *MultiAccountHandler {
+func NewMultiAccountHandler(accountManager *auth.AccountManager) *MultiAccountHandler {
 	ctx := context.Background()
 	multiClient, err := NewMultiAccountClient(ctx, accountManager)
 	if err != nil {
@@ -119,17 +118,11 @@ func NewMultiAccountHandler(accountManager *auth.AccountManager, defaultClient *
 
 	return &MultiAccountHandler{
 		multiClient: multiClient,
-		client:      defaultClient,
 	}
 }
 
 // GetTools returns the available Gmail tools with multi-account support
 func (h *MultiAccountHandler) GetTools() []server.Tool {
-	accountProp := server.Property{
-		Type:        "string",
-		Description: "Email address of the account to use (optional)",
-	}
-
 	return []server.Tool{
 		{
 			Name:        "gmail_messages_list",
@@ -145,7 +138,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "number",
 						Description: "Maximum number of results",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 			},
 		},
@@ -159,7 +152,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Message ID",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"message_id"},
 			},
@@ -211,7 +204,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Content type: 'text/plain' (default) or 'text/html'",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"to", "subject", "body"},
 			},
@@ -238,7 +231,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Content type: 'text/plain' (default) or 'text/html'",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"message_id", "body"},
 			},
@@ -257,7 +250,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Attachment ID to download",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"message_id", "attachment_id"},
 			},
@@ -268,7 +261,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 			InputSchema: server.InputSchema{
 				Type: "object",
 				Properties: map[string]server.Property{
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 			},
 		},
@@ -289,7 +282,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 							Type: "string",
 						},
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"message_id", "label_ids"},
 			},
@@ -311,7 +304,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 							Type: "string",
 						},
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"message_id", "label_ids"},
 			},
@@ -346,7 +339,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Thread ID for reply drafts (optional)",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 			},
 		},
@@ -360,7 +353,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Message ID to trash",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"message_id"},
 			},
@@ -375,7 +368,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Message ID to untrash",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"message_id"},
 			},
@@ -390,7 +383,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Message ID to mark as read",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"message_id"},
 			},
@@ -405,7 +398,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Label name",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"name"},
 			},
@@ -420,7 +413,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "string",
 						Description: "Thread ID (from message listing or message details)",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"thread_id"},
 			},
@@ -431,7 +424,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 			InputSchema: server.InputSchema{
 				Type: "object",
 				Properties: map[string]server.Property{
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 			},
 		},
@@ -445,7 +438,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "number",
 						Description: "Maximum number of drafts to return",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 			},
 		},
@@ -463,7 +456,7 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 						Type:        "number",
 						Description: "Maximum number of results (default 10)",
 					},
-					"account": accountProp,
+					"account": server.AccountProperty,
 				},
 				Required: []string{"query"},
 			},
@@ -471,16 +464,9 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 	}
 }
 
-// getClientOrDefault resolves the client for a given account hint, falling back to default
+// getClientOrDefault resolves the client for a given account hint
 func (h *MultiAccountHandler) getClientOrDefault(ctx context.Context, account string) (*Client, string, error) {
-	client, accountUsed, err := h.multiClient.GetClientForContext(ctx, account)
-	if err != nil {
-		if h.client != nil {
-			return h.client, "default", nil
-		}
-		return nil, "", err
-	}
-	return client, accountUsed, nil
+	return h.multiClient.GetClientForContext(ctx, account)
 }
 
 // HandleToolCall handles a tool call for Gmail service with multi-account support
@@ -1225,10 +1211,6 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 		}, nil
 
 	default:
-		if h.client != nil {
-			handler := &Handler{client: h.client}
-			return handler.HandleToolCall(ctx, name, arguments)
-		}
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
 }
@@ -1251,17 +1233,6 @@ func (h *MultiAccountHandler) HandleResourceCall(ctx context.Context, uri string
 		// List inbox messages from all accounts
 		results, err := h.multiClient.SearchAcrossAccounts(ctx, "in:inbox", 20)
 		if err != nil {
-			// Fall back to default client if available
-			if h.client != nil {
-				messages, err := h.client.ListMessages("in:inbox", 20)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]interface{}{
-					"messages": messages,
-					"count":    len(messages),
-				}, nil
-			}
 			return nil, err
 		}
 

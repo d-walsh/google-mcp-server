@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"go.ngs.io/google-mcp-server/accounts"
 	"go.ngs.io/google-mcp-server/auth"
@@ -37,7 +35,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
-	// Configuration loaded successfully
 
 	// Initialize account manager for multi-account support
 	ctx := context.Background()
@@ -47,17 +44,12 @@ func main() {
 	}
 	log.Printf("[INFO] Account manager initialized with %d accounts\n", len(accountManager.ListAccounts()))
 
-	// Legacy default OAuth client disabled — all services use AccountManager
-	// for proper token refresh. The legacy client cached a stale httpClient
-	// that was never updated by accounts_refresh or auto-refresh.
-	var oauthClient *auth.OAuthClient // always nil
-
 	// Initialize MCP server
 	mcpServer := server.NewMCPServer(cfg)
 
 	// Register services before starting the server
 	log.Println("[INFO] Starting service registration...")
-	if err := registerServices(ctx, mcpServer, accountManager, oauthClient, cfg); err != nil {
+	if err := registerServices(ctx, mcpServer, accountManager, cfg); err != nil {
 		log.Printf("[WARNING] Some services failed to register: %v", err)
 	} else {
 		log.Println("[INFO] All services registered successfully")
@@ -69,181 +61,52 @@ func main() {
 	}
 }
 
-func registerServices(ctx context.Context, srv *server.MCPServer, accountManager *auth.AccountManager, oauth *auth.OAuthClient, cfg *config.Config) error {
+func registerServices(ctx context.Context, srv *server.MCPServer, am *auth.AccountManager, cfg *config.Config) error {
 	// Register account management service
-	accountsHandler := accounts.NewHandler(accountManager)
+	accountsHandler := accounts.NewHandler(am)
 	srv.RegisterService("accounts", accountsHandler)
 	log.Println("[DEBUG] Accounts service registered")
 
-	// Use a short timeout for service initialization to prevent blocking
-	initTimeout := 5 * time.Second
-
-	// Add delay between service initializations to avoid conflicts
-	serviceDelay := 100 * time.Millisecond
-
-	// Initialize and register Calendar service with multi-account support
 	if cfg.Services.Calendar.Enabled {
 		log.Println("[DEBUG] Initializing Calendar service...")
-		var calendarClient *calendar.Client
-		if oauth != nil {
-			initCtx, cancel := context.WithTimeout(ctx, initTimeout)
-			var err error
-			calendarClient, err = calendar.NewClient(initCtx, oauth)
-			cancel()
-			if err != nil {
-				log.Printf("[WARNING] Failed to initialize default Calendar client: %v\n", err)
-				calendarClient = nil
-			}
-		}
-		// Use multi-account handler
-		calendarHandler := calendar.NewMultiAccountHandler(accountManager, calendarClient)
-		srv.RegisterService("calendar", calendarHandler)
+		srv.RegisterService("calendar", calendar.NewMultiAccountHandler(am))
 		log.Println("[DEBUG] Calendar service registered with multi-account support")
-		// Add delay before next service
-		time.Sleep(serviceDelay)
 	}
 
-	// Initialize and register Drive service with multi-account support
 	if cfg.Services.Drive.Enabled {
 		log.Println("[DEBUG] Initializing Drive service...")
-		var driveClient *drive.Client
-		if oauth != nil {
-			initCtx, cancel := context.WithTimeout(ctx, initTimeout)
-			var err error
-			driveClient, err = drive.NewClient(initCtx, oauth)
-			cancel()
-			if err != nil {
-				log.Printf("[WARNING] Failed to initialize default Drive client: %v\n", err)
-				driveClient = nil
-			}
-		}
-		// Use multi-account handler
-		driveHandler := drive.NewMultiAccountHandler(accountManager, driveClient)
-		srv.RegisterService("drive", driveHandler)
+		srv.RegisterService("drive", drive.NewMultiAccountHandler(am))
 		log.Println("[DEBUG] Drive service registered with multi-account support")
-		// Add delay before next service
-		time.Sleep(serviceDelay)
 	}
 
-	// Initialize and register Gmail service with multi-account support
 	if cfg.Services.Gmail.Enabled {
 		log.Println("[DEBUG] Initializing Gmail service...")
-		var gmailClient *gmail.Client
-		if oauth != nil {
-			initCtx, cancel := context.WithTimeout(ctx, initTimeout)
-			var err error
-			gmailClient, err = gmail.NewClient(initCtx, oauth)
-			cancel()
-			if err != nil {
-				log.Printf("[WARNING] Failed to initialize default Gmail client: %v\n", err)
-				gmailClient = nil
-			}
-		}
-		// Use multi-account handler
-		gmailHandler := gmail.NewMultiAccountHandler(accountManager, gmailClient)
-		srv.RegisterService("gmail", gmailHandler)
+		srv.RegisterService("gmail", gmail.NewMultiAccountHandler(am))
 		log.Println("[DEBUG] Gmail service registered with multi-account support")
-		// Add delay before next service
-		time.Sleep(serviceDelay)
 	}
 
-	// Initialize and register Sheets service with multi-account support
 	if cfg.Services.Sheets.Enabled {
 		log.Println("[DEBUG] Initializing Sheets service...")
-		var sheetsClient *sheets.Client
-		if oauth != nil {
-			initCtx, cancel := context.WithTimeout(ctx, initTimeout)
-			var err error
-			sheetsClient, err = sheets.NewClient(initCtx, oauth)
-			cancel()
-			if err != nil {
-				log.Printf("[WARNING] Failed to initialize default Sheets client: %v\n", err)
-				sheetsClient = nil
-			}
-		}
-		// Use multi-account handler
-		sheetsHandler := sheets.NewMultiAccountHandler(accountManager, sheetsClient)
-		srv.RegisterService("sheets", sheetsHandler)
+		srv.RegisterService("sheets", sheets.NewMultiAccountHandler(am))
 		log.Println("[DEBUG] Sheets service registered with multi-account support")
-		// Add delay before next service
-		time.Sleep(serviceDelay)
 	}
 
-	// Initialize and register Docs service with multi-account support
 	if cfg.Services.Docs.Enabled {
 		log.Println("[DEBUG] Initializing Docs service...")
-		var docsClient *docs.Client
-		if oauth != nil {
-			initCtx, cancel := context.WithTimeout(ctx, initTimeout)
-			var err error
-			docsClient, err = docs.NewClient(initCtx, oauth)
-			cancel()
-			if err != nil {
-				log.Printf("[WARNING] Failed to initialize default Docs client: %v\n", err)
-				docsClient = nil
-			}
-		}
-		// Use multi-account handler
-		docsHandler := docs.NewMultiAccountHandler(accountManager, docsClient)
-		srv.RegisterService("docs", docsHandler)
+		srv.RegisterService("docs", docs.NewMultiAccountHandler(am))
 		log.Println("[DEBUG] Docs service registered with multi-account support")
-		// Add delay before next service
-		time.Sleep(serviceDelay)
 	}
 
-	// Initialize and register Slides service with multi-account support
 	if cfg.Services.Slides.Enabled {
 		log.Println("[DEBUG] Initializing Slides service...")
-		// Create service and multi-account service
-		slidesService := slides.NewService(accountManager)
-		slidesMultiAccount := slides.NewMultiAccountService(accountManager)
-
-		// Combine tools from both services
-		allTools := append(slidesService.GetTools(), slidesMultiAccount.GetTools()...)
-
-		// Create a combined handler wrapper
-		slidesHandler := server.NewCombinedHandler(
-			allTools,
-			func(ctx context.Context, name string, args json.RawMessage) (interface{}, error) {
-				// Try regular service first
-				result, err := slidesService.HandleToolCall(ctx, name, args)
-				if err == nil {
-					return result, nil
-				}
-				// Check if it's an "unknown tool" error
-				if err.Error() == fmt.Sprintf("unknown tool: %s", name) {
-					// Fall back to multi-account service
-					return slidesMultiAccount.HandleToolCall(ctx, name, args)
-				}
-				// For other errors, return the original error
-				return nil, err
-			},
-		)
-
-		srv.RegisterService("slides", slidesHandler)
+		srv.RegisterService("slides", slides.NewMultiAccountHandler(am))
 		log.Println("[DEBUG] Slides service registered with multi-account support")
 	}
 
-	// Initialize and register Tasks service with multi-account support
 	if cfg.Services.Tasks.Enabled {
 		log.Println("[DEBUG] Initializing Tasks service...")
-		var tasksClient *tasks.Client
-		if oauth != nil {
-			initCtx, cancel := context.WithTimeout(ctx, initTimeout)
-			var err error
-			tasksClient, err = tasks.NewClient(initCtx, oauth)
-			cancel()
-			if err != nil {
-				log.Printf("[WARNING] Failed to initialize default Tasks client: %v\n", err)
-				tasksClient = nil
-			}
-		}
-		// Use multi-account handler
-		tasksHandler := tasks.NewMultiAccountHandler(accountManager, tasksClient)
-		srv.RegisterService("tasks", tasksHandler)
+		srv.RegisterService("tasks", tasks.NewMultiAccountHandler(am))
 		log.Println("[DEBUG] Tasks service registered with multi-account support")
-		// Add delay before next service
-		time.Sleep(serviceDelay)
 	}
 
 	return nil
