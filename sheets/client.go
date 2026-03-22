@@ -25,6 +25,19 @@ func NewClient(ctx context.Context, oauth *auth.OAuthClient) (*Client, error) {
 	}, nil
 }
 
+// GetSpreadsheetFull gets spreadsheet with grid data (formatting, values, notes) for specific ranges
+func (c *Client) GetSpreadsheetFull(spreadsheetID string, ranges []string) (*sheets.Spreadsheet, error) {
+	call := c.service.Spreadsheets.Get(spreadsheetID).IncludeGridData(true)
+	if len(ranges) > 0 {
+		call = call.Ranges(ranges...)
+	}
+	spreadsheet, err := call.Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get spreadsheet with grid data: %w", err)
+	}
+	return spreadsheet, nil
+}
+
 // CreateSpreadsheet creates a new spreadsheet
 func (c *Client) CreateSpreadsheet(title string, sheetTitles []string) (*sheets.Spreadsheet, error) {
 	spreadsheet := &sheets.Spreadsheet{

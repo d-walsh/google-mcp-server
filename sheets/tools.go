@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"go.ngs.io/google-mcp-server/server"
+	"google.golang.org/api/sheets/v4"
 )
 
 // Handler implements the ServiceHandler interface for Sheets
@@ -30,6 +31,27 @@ func (h *Handler) GetTools() []server.Tool {
 					"spreadsheet_id": {
 						Type:        "string",
 						Description: "Spreadsheet ID",
+					},
+				},
+				Required: []string{"spreadsheet_id"},
+			},
+		},
+		{
+			Name:        "sheets_spreadsheet_get_full",
+			Description: "Get spreadsheet with full cell data including formatting, notes, and values for specific ranges. Returns cell background colors, text formatting (bold, italic, font, size), borders, number formats, notes, hyperlinks, and data validation. Use this to inspect how a sheet looks.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"ranges": {
+						Type:        "array",
+						Description: "A1 notation ranges to include (e.g., ['Sheet1!A1:D5']). If omitted, returns all data (can be large).",
+						Items: &server.Property{
+							Type: "string",
+						},
 					},
 				},
 				Required: []string{"spreadsheet_id"},
@@ -310,6 +332,139 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 
 		return result, nil
 
+	case "sheets_spreadsheet_get_full":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			Ranges        []string `json:"ranges"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		spreadsheet, err := h.client.GetSpreadsheetFull(args.SpreadsheetID, args.Ranges)
+		if err != nil {
+			return nil, err
+		}
+
+		result := map[string]interface{}{
+			"spreadsheetId":  spreadsheet.SpreadsheetId,
+			"title":          spreadsheet.Properties.Title,
+			"spreadsheetUrl": spreadsheet.SpreadsheetUrl,
+		}
+
+		// Extract sheet data with formatting info
+		sheetsData := make([]map[string]interface{}, 0)
+		for _, sheet := range spreadsheet.Sheets {
+			sheetInfo := map[string]interface{}{
+				"sheetId": sheet.Properties.SheetId,
+				"title":   sheet.Properties.Title,
+			}
+			if sheet.Properties.GridProperties != nil {
+				sheetInfo["frozenRowCount"] = sheet.Properties.GridProperties.FrozenRowCount
+				sheetInfo["frozenColumnCount"] = sheet.Properties.GridProperties.FrozenColumnCount
+				sheetInfo["rowCount"] = sheet.Properties.GridProperties.RowCount
+				sheetInfo["columnCount"] = sheet.Properties.GridProperties.ColumnCount
+			}
+
+			// Extract grid data (cell values + formatting)
+			if len(sheet.Data) > 0 {
+				grids := make([]map[string]interface{}, 0)
+				for _, gridData := range sheet.Data {
+					rows := make([]map[string]interface{}, 0)
+					for rowIdx, row := range gridData.RowData {
+						cells := make([]map[string]interface{}, 0)
+						for colIdx, cell := range row.Values {
+							cellInfo := map[string]interface{}{
+								"row": rowIdx,
+								"col": colIdx,
+							}
+							// Value
+							if cell.FormattedValue != "" {
+								cellInfo["value"] = cell.FormattedValue
+							}
+							// Note
+							if cell.Note != "" {
+								cellInfo["note"] = cell.Note
+							}
+							// Hyperlink
+							if cell.Hyperlink != "" {
+								cellInfo["hyperlink"] = cell.Hyperlink
+							}
+							// Formatting
+							if cell.EffectiveFormat != nil {
+								fmt := cell.EffectiveFormat
+								format := map[string]interface{}{}
+								if fmt.BackgroundColor != nil {
+									format["backgroundColor"] = colorToHex(fmt.BackgroundColor)
+								}
+								if fmt.TextFormat != nil {
+									tf := map[string]interface{}{}
+									if fmt.TextFormat.Bold {
+										tf["bold"] = true
+									}
+									if fmt.TextFormat.Italic {
+										tf["italic"] = true
+									}
+									if fmt.TextFormat.FontFamily != "" {
+										tf["fontFamily"] = fmt.TextFormat.FontFamily
+									}
+									if fmt.TextFormat.FontSize > 0 {
+										tf["fontSize"] = fmt.TextFormat.FontSize
+									}
+									if fmt.TextFormat.ForegroundColor != nil {
+										tf["color"] = colorToHex(fmt.TextFormat.ForegroundColor)
+									}
+									if len(tf) > 0 {
+										format["textFormat"] = tf
+									}
+								}
+								if fmt.NumberFormat != nil {
+									format["numberFormat"] = map[string]interface{}{
+										"type":    fmt.NumberFormat.Type,
+										"pattern": fmt.NumberFormat.Pattern,
+									}
+								}
+								if fmt.HorizontalAlignment != "" {
+									format["horizontalAlignment"] = fmt.HorizontalAlignment
+								}
+								if len(format) > 0 {
+									cellInfo["format"] = format
+								}
+							}
+							// Only include cells with some data
+							if len(cellInfo) > 2 { // more than just row/col
+								cells = append(cells, cellInfo)
+							}
+						}
+						if len(cells) > 0 {
+							rows = append(rows, map[string]interface{}{
+								"rowIndex": rowIdx,
+								"cells":    cells,
+							})
+						}
+					}
+					if len(rows) > 0 {
+						grids = append(grids, map[string]interface{}{
+							"startRow":    gridData.StartRow,
+							"startColumn": gridData.StartColumn,
+							"rows":        rows,
+						})
+					}
+				}
+				if len(grids) > 0 {
+					sheetInfo["data"] = grids
+				}
+			}
+
+			// Banding info
+			if len(sheet.BandedRanges) > 0 {
+				sheetInfo["hasBanding"] = true
+			}
+
+			sheetsData = append(sheetsData, sheetInfo)
+		}
+		result["sheets"] = sheetsData
+		return result, nil
+
 	case "sheets_values_get":
 		var args struct {
 			SpreadsheetID string `json:"spreadsheet_id"`
@@ -538,6 +693,17 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
+}
+
+// colorToHex converts a Google Sheets Color (float64 0-1) to hex string
+func colorToHex(c *sheets.Color) string {
+	if c == nil {
+		return ""
+	}
+	r := int(c.Red * 255)
+	g := int(c.Green * 255)
+	b := int(c.Blue * 255)
+	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
 }
 
 // GetResources returns the available Sheets resources
