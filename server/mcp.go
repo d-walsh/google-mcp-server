@@ -255,7 +255,7 @@ func (h *Handler) handleInitialize(ctx context.Context, conn *jsonrpc2.Conn, req
 			Prompts   interface{} `json:"prompts,omitempty"`
 			Logging   interface{} `json:"logging,omitempty"`
 		} `json:"capabilities"`
-		ServerInfo   struct {
+		ServerInfo struct {
 			Name    string `json:"name"`
 			Version string `json:"version"`
 		} `json:"serverInfo"`

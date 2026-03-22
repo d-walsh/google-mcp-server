@@ -434,6 +434,64 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 				Required: []string{"name"},
 			},
 		},
+		{
+			Name:        "gmail_read_thread",
+			Description: "Get full conversation thread by thread ID, returning all messages in the thread with headers and body",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"thread_id": {
+						Type:        "string",
+						Description: "Thread ID (from message listing or message details)",
+					},
+					"account": accountProp,
+				},
+				Required: []string{"thread_id"},
+			},
+		},
+		{
+			Name:        "gmail_get_profile",
+			Description: "Get the authenticated user's Gmail profile (email address, messages total, threads total, history ID)",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"account": accountProp,
+				},
+			},
+		},
+		{
+			Name:        "gmail_list_drafts",
+			Description: "List email drafts with optional limit",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"max_results": {
+						Type:        "number",
+						Description: "Maximum number of drafts to return",
+					},
+					"account": accountProp,
+				},
+			},
+		},
+		{
+			Name:        "gmail_search_messages",
+			Description: "Search Gmail messages using full Gmail search syntax (same as messages_list but named for clarity). Supports operators like from:, to:, subject:, has:attachment, after:, before:, label:, is:unread, etc.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"query": {
+						Type:        "string",
+						Description: "Gmail search query (e.g., 'from:user@example.com subject:invoice after:2024/01/01 has:attachment')",
+					},
+					"max_results": {
+						Type:        "number",
+						Description: "Maximum number of results (default 10)",
+					},
+					"account": accountProp,
+				},
+				Required: []string{"query"},
+			},
+		},
 	}
 }
 
@@ -946,6 +1004,248 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 			"id":      label.Id,
 			"name":    label.Name,
 			"account": accountUsed,
+		}, nil
+
+	case "gmail_read_thread":
+		var args struct {
+			ThreadID string `json:"thread_id"`
+			Account  string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		thread, err := client.GetThread(args.ThreadID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Format thread messages
+		messages := make([]map[string]interface{}, 0, len(thread.Messages))
+		for _, msg := range thread.Messages {
+			entry := map[string]interface{}{
+				"id":           msg.Id,
+				"threadId":     msg.ThreadId,
+				"labelIds":     msg.LabelIds,
+				"snippet":      msg.Snippet,
+				"internalDate": msg.InternalDate,
+			}
+
+			if msg.Payload != nil {
+				headers := make(map[string]string)
+				for _, hdr := range msg.Payload.Headers {
+					switch strings.ToLower(hdr.Name) {
+					case "subject", "from", "to", "cc", "date", "message-id":
+						headers[hdr.Name] = hdr.Value
+					}
+				}
+				entry["headers"] = headers
+
+				// Extract body
+				if msg.Payload.Body != nil && msg.Payload.Body.Data != "" {
+					decoded, decErr := base64.URLEncoding.DecodeString(msg.Payload.Body.Data)
+					if decErr == nil {
+						entry["body"] = string(decoded)
+					} else {
+						entry["body"] = msg.Payload.Body.Data
+					}
+				} else if msg.Payload.Parts != nil {
+					// Check parts for body content
+					for _, part := range msg.Payload.Parts {
+						if part.MimeType == "text/plain" && part.Body != nil && part.Body.Data != "" {
+							decoded, decErr := base64.URLEncoding.DecodeString(part.Body.Data)
+							if decErr == nil {
+								entry["body"] = string(decoded)
+							} else {
+								entry["body"] = part.Body.Data
+							}
+							break
+						}
+					}
+					// Fall back to text/html if no text/plain found
+					if _, hasBody := entry["body"]; !hasBody {
+						for _, part := range msg.Payload.Parts {
+							if part.MimeType == "text/html" && part.Body != nil && part.Body.Data != "" {
+								decoded, decErr := base64.URLEncoding.DecodeString(part.Body.Data)
+								if decErr == nil {
+									entry["body_html"] = string(decoded)
+								}
+								break
+							}
+						}
+					}
+
+					// Include attachment info
+					var attachments []map[string]interface{}
+					for _, part := range msg.Payload.Parts {
+						if part.Filename != "" && part.Body != nil && part.Body.AttachmentId != "" {
+							attachments = append(attachments, map[string]interface{}{
+								"filename":     part.Filename,
+								"mimeType":     part.MimeType,
+								"size":         part.Body.Size,
+								"attachmentId": part.Body.AttachmentId,
+							})
+						}
+					}
+					if len(attachments) > 0 {
+						entry["attachments"] = attachments
+					}
+				}
+			}
+
+			messages = append(messages, entry)
+		}
+
+		return map[string]interface{}{
+			"threadId":      thread.Id,
+			"historyId":     thread.HistoryId,
+			"messages":      messages,
+			"message_count": len(messages),
+			"account":       accountUsed,
+		}, nil
+
+	case "gmail_get_profile":
+		var args struct {
+			Account string `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		profile, err := client.GetProfile()
+		if err != nil {
+			return nil, err
+		}
+
+		return map[string]interface{}{
+			"emailAddress":  profile.EmailAddress,
+			"messagesTotal": profile.MessagesTotal,
+			"threadsTotal":  profile.ThreadsTotal,
+			"historyId":     profile.HistoryId,
+			"account":       accountUsed,
+		}, nil
+
+	case "gmail_list_drafts":
+		var args struct {
+			MaxResults float64 `json:"max_results"`
+			Account    string  `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		drafts, err := client.ListDrafts(int64(args.MaxResults))
+		if err != nil {
+			return nil, err
+		}
+
+		draftList := make([]map[string]interface{}, 0, len(drafts))
+		for _, draft := range drafts {
+			entry := map[string]interface{}{
+				"id": draft.Id,
+			}
+			if draft.Message != nil {
+				entry["messageId"] = draft.Message.Id
+				entry["threadId"] = draft.Message.ThreadId
+
+				// Fetch metadata for richer listing
+				meta, metaErr := client.GetMessageMetadata(draft.Message.Id)
+				if metaErr == nil && meta != nil {
+					entry["snippet"] = meta.Snippet
+					if meta.Payload != nil {
+						for _, hdr := range meta.Payload.Headers {
+							switch strings.ToLower(hdr.Name) {
+							case "subject":
+								entry["subject"] = hdr.Value
+							case "to":
+								entry["to"] = hdr.Value
+							case "date":
+								entry["date"] = hdr.Value
+							}
+						}
+					}
+				}
+			}
+			draftList = append(draftList, entry)
+		}
+
+		return map[string]interface{}{
+			"drafts":  draftList,
+			"count":   len(draftList),
+			"account": accountUsed,
+		}, nil
+
+	case "gmail_search_messages":
+		var args struct {
+			Query      string  `json:"query"`
+			MaxResults float64 `json:"max_results"`
+			Account    string  `json:"account"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		if args.MaxResults == 0 {
+			args.MaxResults = 10
+		}
+
+		client, accountUsed, err := h.getClientOrDefault(ctx, args.Account)
+		if err != nil {
+			return nil, err
+		}
+
+		messages, err := client.ListMessages(args.Query, int64(args.MaxResults))
+		if err != nil {
+			return nil, err
+		}
+
+		// Enrich each message with metadata
+		messageList := make([]map[string]interface{}, 0, len(messages))
+		for _, msg := range messages {
+			entry := map[string]interface{}{
+				"id":       msg.Id,
+				"threadId": msg.ThreadId,
+			}
+
+			meta, metaErr := client.GetMessageMetadata(msg.Id)
+			if metaErr == nil && meta != nil {
+				entry["snippet"] = meta.Snippet
+				entry["labelIds"] = meta.LabelIds
+				if meta.Payload != nil {
+					for _, hdr := range meta.Payload.Headers {
+						switch strings.ToLower(hdr.Name) {
+						case "subject":
+							entry["subject"] = hdr.Value
+						case "from":
+							entry["from"] = hdr.Value
+						case "date":
+							entry["date"] = hdr.Value
+						}
+					}
+				}
+			}
+
+			messageList = append(messageList, entry)
+		}
+		return map[string]interface{}{
+			"messages": messageList,
+			"count":    len(messageList),
+			"account":  accountUsed,
 		}, nil
 
 	default:

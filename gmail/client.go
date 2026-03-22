@@ -299,8 +299,8 @@ func (c *Client) CreateDraft(to, subject, body, cc, contentType, threadID string
 // CreateLabel creates a new label
 func (c *Client) CreateLabel(name string) (*gmail.Label, error) {
 	label := &gmail.Label{
-		Name:                name,
-		LabelListVisibility: "labelShow",
+		Name:                  name,
+		LabelListVisibility:   "labelShow",
 		MessageListVisibility: "show",
 	}
 	created, err := c.service.Users.Labels.Create("me", label).Do()
@@ -308,4 +308,45 @@ func (c *Client) CreateLabel(name string) (*gmail.Label, error) {
 		return nil, fmt.Errorf("failed to create label: %w", err)
 	}
 	return created, nil
+}
+
+// GetThread gets a full conversation thread by thread ID
+func (c *Client) GetThread(threadID string) (*gmail.Thread, error) {
+	thread, err := c.service.Users.Threads.Get("me", threadID).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get thread: %w", err)
+	}
+	return thread, nil
+}
+
+// GetProfile gets the authenticated user's Gmail profile
+func (c *Client) GetProfile() (*gmail.Profile, error) {
+	profile, err := c.service.Users.GetProfile("me").Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get profile: %w", err)
+	}
+	return profile, nil
+}
+
+// ListDrafts lists drafts for the authenticated user
+func (c *Client) ListDrafts(maxResults int64) ([]*gmail.Draft, error) {
+	call := c.service.Users.Drafts.List("me")
+	if maxResults > 0 {
+		call = call.MaxResults(maxResults)
+	}
+
+	response, err := call.Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list drafts: %w", err)
+	}
+	return response.Drafts, nil
+}
+
+// GetDraft gets a draft by ID
+func (c *Client) GetDraft(draftID string) (*gmail.Draft, error) {
+	draft, err := c.service.Users.Drafts.Get("me", draftID).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get draft: %w", err)
+	}
+	return draft, nil
 }

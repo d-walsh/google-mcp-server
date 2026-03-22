@@ -136,7 +136,7 @@ func (h *Handler) GetTools() []server.Tool {
 			Name:        "gmail_labels_list",
 			Description: "List all Gmail labels",
 			InputSchema: server.InputSchema{
-				Type: "object",
+				Type:       "object",
 				Properties: map[string]server.Property{},
 			},
 		},

@@ -1,14 +1,18 @@
 package docs
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"go.ngs.io/google-mcp-server/auth"
 	"go.ngs.io/google-mcp-server/server"
 	"google.golang.org/api/docs/v1"
+	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 )
 
@@ -45,6 +49,19 @@ func (h *MultiAccountHandler) getClientForAccount(ctx context.Context, account *
 	return &Client{service: service}, nil
 }
 
+// resolveAccount resolves an account from the hint or falls back to defaults
+func (h *MultiAccountHandler) resolveAccount(ctx context.Context, accountHint string) (*auth.Account, error) {
+	account, err := h.accountManager.GetAccountForContext(ctx, accountHint)
+	if err != nil || account == nil {
+		accounts := h.accountManager.ListAccounts()
+		if len(accounts) > 0 {
+			return accounts[0], nil
+		}
+		return nil, ErrNoAccount
+	}
+	return account, nil
+}
+
 // HandleToolCall routes tool calls to the appropriate account
 func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, arguments json.RawMessage) (interface{}, error) {
 	// Extract account hint from arguments
@@ -58,14 +75,15 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 		}
 	}
 
+	// Handle docs_document_export_pdf separately since it needs Drive API
+	if name == "docs_document_export_pdf" {
+		return h.handleExportPDF(ctx, arguments, accountHint)
+	}
+
 	// Get account from context
-	account, err := h.accountManager.GetAccountForContext(ctx, accountHint)
-	if err != nil || account == nil {
-		// Try to use the first available account
-		accounts := h.accountManager.ListAccounts()
-		if len(accounts) > 0 {
-			account = accounts[0]
-		}
+	account, err := h.resolveAccount(ctx, accountHint)
+	if err != nil && h.defaultClient == nil {
+		return nil, err
 	}
 
 	var client *Client
@@ -90,6 +108,47 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 	return handler.HandleToolCall(ctx, name, arguments)
 }
 
+// handleExportPDF exports a Google Doc as PDF using the Drive API
+func (h *MultiAccountHandler) handleExportPDF(ctx context.Context, arguments json.RawMessage, accountHint string) (interface{}, error) {
+	var args struct {
+		DocumentID string `json:"document_id"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, fmt.Errorf("invalid arguments: %w", err)
+	}
+
+	account, err := h.resolveAccount(ctx, accountHint)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create Drive service to export
+	driveSvc, err := drive.NewService(ctx, option.WithHTTPClient(account.OAuthClient.GetHTTPClient()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create drive service for export: %w", err)
+	}
+
+	// Export as PDF
+	resp, err := driveSvc.Files.Export(args.DocumentID, "application/pdf").Download()
+	if err != nil {
+		return nil, fmt.Errorf("failed to export document as PDF: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read the PDF content
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, resp.Body); err != nil {
+		return nil, fmt.Errorf("failed to read PDF content: %w", err)
+	}
+
+	return map[string]interface{}{
+		"document_id": args.DocumentID,
+		"data":        base64.StdEncoding.EncodeToString(buf.Bytes()),
+		"size":        buf.Len(),
+		"mimeType":    "application/pdf",
+	}, nil
+}
+
 // GetTools returns the list of available tools
 func (h *MultiAccountHandler) GetTools() []server.Tool {
 	// Tool definitions are static and don't require a live client
@@ -106,6 +165,26 @@ func (h *MultiAccountHandler) GetTools() []server.Tool {
 			Description: "Email address of the account to use (optional)",
 		}
 	}
+
+	// Add new tools
+	tools = append(tools, server.Tool{
+		Name:        "docs_document_export_pdf",
+		Description: "Export a Google Doc as PDF. Returns the PDF content as base64-encoded data.",
+		InputSchema: server.InputSchema{
+			Type: "object",
+			Properties: map[string]server.Property{
+				"document_id": {
+					Type:        "string",
+					Description: "Document ID to export",
+				},
+				"account": {
+					Type:        "string",
+					Description: "Email address of the account to use (optional)",
+				},
+			},
+			Required: []string{"document_id"},
+		},
+	})
 
 	return tools
 }

@@ -62,21 +62,25 @@ func (h *Handler) GetTools() []server.Tool {
 		},
 		{
 			Name:        "drive_files_search",
-			Description: "Search for files in Google Drive",
+			Description: "Search for files in Google Drive. Use 'query' for raw Drive API query syntax, or use the helper fields (name, mime_type, modified_after) which are combined into a query.",
 			InputSchema: server.InputSchema{
 				Type: "object",
 				Properties: map[string]server.Property{
+					"query": {
+						Type:        "string",
+						Description: "Raw Drive API query string (e.g., \"name contains 'report' and mimeType='application/pdf' and modifiedTime > '2024-01-01T00:00:00'\"). Overrides name/mime_type/modified_after if provided.",
+					},
 					"name": {
 						Type:        "string",
-						Description: "File name to search for",
+						Description: "File name to search for (ignored if query is provided)",
 					},
 					"mime_type": {
 						Type:        "string",
-						Description: "MIME type to filter by",
+						Description: "MIME type to filter by (ignored if query is provided)",
 					},
 					"modified_after": {
 						Type:        "string",
-						Description: "Modified after date (RFC3339 format)",
+						Description: "Modified after date (RFC3339 format, ignored if query is provided)",
 					},
 				},
 			},
@@ -394,12 +398,16 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 
 	case "drive_files_search":
 		var args struct {
+			Query         string `json:"query"`
 			Name          string `json:"name"`
 			MimeType      string `json:"mime_type"`
 			ModifiedAfter string `json:"modified_after"`
 		}
 		if err := json.Unmarshal(arguments, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if args.Query != "" {
+			return h.handleFilesSearchRaw(ctx, args.Query)
 		}
 		return h.handleFilesSearch(ctx, args.Name, args.MimeType, args.ModifiedAfter)
 
@@ -582,6 +590,18 @@ func (h *Handler) handleFilesList(ctx context.Context, parentID string, pageSize
 
 	return map[string]interface{}{
 		"files": formatFiles(files),
+	}, nil
+}
+
+func (h *Handler) handleFilesSearchRaw(ctx context.Context, query string) (interface{}, error) {
+	files, err := h.client.ListFiles(ctx, query, 100, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"files": formatFiles(files),
+		"query": query,
 	}, nil
 }
 

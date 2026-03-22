@@ -992,8 +992,8 @@ func (c *Client) CreateChart(spreadsheetID string, sheetID int64, chartType stri
 
 	chart := &sheets.EmbeddedChart{
 		Spec: &sheets.ChartSpec{
-			Title:          title,
-			BasicChart:     basicChart,
+			Title:      title,
+			BasicChart: basicChart,
 		},
 		Position: &sheets.EmbeddedObjectPosition{
 			OverlayPosition: &sheets.OverlayPosition{

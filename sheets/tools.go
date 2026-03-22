@@ -1298,11 +1298,11 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 
 	case "sheets_merge_cells":
 		var args struct {
-			SpreadsheetID string `json:"spreadsheet_id"`
+			SpreadsheetID string  `json:"spreadsheet_id"`
 			SheetID       float64 `json:"sheet_id"`
-			Range         string `json:"range"`
-			MergeType     string `json:"merge_type"`
-			Unmerge       bool   `json:"unmerge"`
+			Range         string  `json:"range"`
+			MergeType     string  `json:"merge_type"`
+			Unmerge       bool    `json:"unmerge"`
 		}
 		if err := json.Unmarshal(arguments, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
@@ -1345,8 +1345,8 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 
 	case "sheets_batch_update":
 		var args struct {
-			SpreadsheetID string            `json:"spreadsheet_id"`
-			Requests      json.RawMessage   `json:"requests"`
+			SpreadsheetID string          `json:"spreadsheet_id"`
+			Requests      json.RawMessage `json:"requests"`
 		}
 		if err := json.Unmarshal(arguments, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
@@ -1361,20 +1361,20 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 			return nil, err
 		}
 		return map[string]interface{}{
-			"status":       "updated",
+			"status":        "updated",
 			"spreadsheetId": resp.SpreadsheetId,
 			"totalReplies":  len(resp.Replies),
 		}, nil
 
 	case "sheets_find_replace":
 		var args struct {
-			SpreadsheetID  string   `json:"spreadsheet_id"`
-			Find           string   `json:"find"`
-			Replacement    string   `json:"replacement"`
-			SheetID        *float64 `json:"sheet_id"`
-			MatchCase      bool     `json:"match_case"`
-			MatchEntireCell bool    `json:"match_entire_cell"`
-			SearchByRegex  bool     `json:"search_by_regex"`
+			SpreadsheetID   string   `json:"spreadsheet_id"`
+			Find            string   `json:"find"`
+			Replacement     string   `json:"replacement"`
+			SheetID         *float64 `json:"sheet_id"`
+			MatchCase       bool     `json:"match_case"`
+			MatchEntireCell bool     `json:"match_entire_cell"`
+			SearchByRegex   bool     `json:"search_by_regex"`
 		}
 		if err := json.Unmarshal(arguments, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
@@ -1594,9 +1594,9 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 
 	case "sheets_duplicate_sheet":
 		var args struct {
-			SpreadsheetID string `json:"spreadsheet_id"`
+			SpreadsheetID string  `json:"spreadsheet_id"`
 			SheetID       float64 `json:"sheet_id"`
-			NewName       string `json:"new_name"`
+			NewName       string  `json:"new_name"`
 		}
 		if err := json.Unmarshal(arguments, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
@@ -1614,11 +1614,11 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 
 	case "sheets_add_protected_range":
 		var args struct {
-			SpreadsheetID string `json:"spreadsheet_id"`
+			SpreadsheetID string  `json:"spreadsheet_id"`
 			SheetID       float64 `json:"sheet_id"`
-			Range         string `json:"range"`
-			Description   string `json:"description"`
-			WarningOnly   bool   `json:"warning_only"`
+			Range         string  `json:"range"`
+			Description   string  `json:"description"`
+			WarningOnly   bool    `json:"warning_only"`
 		}
 		if err := json.Unmarshal(arguments, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
