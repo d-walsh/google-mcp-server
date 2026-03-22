@@ -809,6 +809,145 @@ func (h *Handler) GetTools() []server.Tool {
 				Required: []string{"spreadsheet_id", "sheet_id", "range"},
 			},
 		},
+		{
+			Name:        "sheets_list_charts",
+			Description: "List all embedded charts in a spreadsheet with their details (chartId, title, type, position, dimensions)",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Filter to a specific sheet (optional, omit for all sheets)",
+					},
+				},
+				Required: []string{"spreadsheet_id"},
+			},
+		},
+		{
+			Name:        "sheets_delete_chart",
+			Description: "Delete an embedded chart by its chartId",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"chart_id": {
+						Type:        "number",
+						Description: "Chart ID to delete (from sheets_list_charts)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "chart_id"},
+			},
+		},
+		{
+			Name:        "sheets_update_chart_position",
+			Description: "Move and/or resize an embedded chart. Only specified fields are updated.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"chart_id": {
+						Type:        "number",
+						Description: "Chart ID to move/resize (from sheets_list_charts)",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Move chart to a different sheet (optional)",
+					},
+					"anchor_row": {
+						Type:        "number",
+						Description: "New anchor row (0-indexed, optional)",
+					},
+					"anchor_col": {
+						Type:        "number",
+						Description: "New anchor column (0-indexed, optional)",
+					},
+					"width": {
+						Type:        "number",
+						Description: "New width in pixels (optional)",
+					},
+					"height": {
+						Type:        "number",
+						Description: "New height in pixels (optional)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "chart_id"},
+			},
+		},
+		{
+			Name:        "sheets_create_waterfall_chart",
+			Description: "Create a waterfall chart with positive/negative/subtotal bar coloring. Useful for budget breakdowns, P&L waterfalls, and variance analysis.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"domain_range": {
+						Type:        "string",
+						Description: "A1 notation for labels/categories (e.g., 'P2:P22')",
+					},
+					"data_range": {
+						Type:        "string",
+						Description: "A1 notation for values (e.g., 'Q2:Q22')",
+					},
+					"title": {
+						Type:        "string",
+						Description: "Chart title (optional)",
+					},
+					"subtotal_indices": {
+						Type:        "array",
+						Description: "0-indexed row positions within the data to mark as subtotal bars (gray). E.g., [5, 10, 20] marks the 6th, 11th, and 21st data points as subtotals.",
+						Items: &server.Property{
+							Type: "number",
+						},
+					},
+					"position_row": {
+						Type:        "number",
+						Description: "Anchor row for chart placement (0-indexed, default 0)",
+					},
+					"position_col": {
+						Type:        "number",
+						Description: "Anchor column for chart placement (0-indexed, default 0)",
+					},
+					"width": {
+						Type:        "number",
+						Description: "Chart width in pixels (default 800)",
+					},
+					"height": {
+						Type:        "number",
+						Description: "Chart height in pixels (default 500)",
+					},
+					"positive_color": {
+						Type:        "string",
+						Description: "Hex color for positive (increase) bars (default '#4285f4' blue)",
+					},
+					"negative_color": {
+						Type:        "string",
+						Description: "Hex color for negative (decrease) bars (default '#ea4335' red)",
+					},
+					"subtotal_color": {
+						Type:        "string",
+						Description: "Hex color for subtotal bars (default '#bfbfbf' gray)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "domain_range", "data_range"},
+			},
+		},
 	}
 }
 
@@ -1633,6 +1772,174 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 			"range":            args.Range,
 			"warningOnly":      args.WarningOnly,
 		}, nil
+
+	case "sheets_list_charts":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			SheetID       *float64 `json:"sheet_id"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		var sheetID *int64
+		if args.SheetID != nil {
+			id := int64(*args.SheetID)
+			sheetID = &id
+		}
+		charts, err := h.client.ListCharts(args.SpreadsheetID, sheetID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"charts": charts,
+			"count":  len(charts),
+		}, nil
+
+	case "sheets_delete_chart":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			ChartID       float64 `json:"chart_id"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.DeleteChart(args.SpreadsheetID, int64(args.ChartID)); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":  "deleted",
+			"chartId": int64(args.ChartID),
+		}, nil
+
+	case "sheets_update_chart_position":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			ChartID       float64  `json:"chart_id"`
+			SheetID       *float64 `json:"sheet_id"`
+			AnchorRow     *float64 `json:"anchor_row"`
+			AnchorCol     *float64 `json:"anchor_col"`
+			Width         *float64 `json:"width"`
+			Height        *float64 `json:"height"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		var sheetID, anchorRow, anchorCol, width, height *int64
+		if args.SheetID != nil {
+			v := int64(*args.SheetID)
+			sheetID = &v
+		}
+		if args.AnchorRow != nil {
+			v := int64(*args.AnchorRow)
+			anchorRow = &v
+		}
+		if args.AnchorCol != nil {
+			v := int64(*args.AnchorCol)
+			anchorCol = &v
+		}
+		if args.Width != nil {
+			v := int64(*args.Width)
+			width = &v
+		}
+		if args.Height != nil {
+			v := int64(*args.Height)
+			height = &v
+		}
+		if err := h.client.UpdateChartPosition(args.SpreadsheetID, int64(args.ChartID), sheetID, anchorRow, anchorCol, width, height); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":  "position_updated",
+			"chartId": int64(args.ChartID),
+		}, nil
+
+	case "sheets_create_waterfall_chart":
+		var args struct {
+			SpreadsheetID   string    `json:"spreadsheet_id"`
+			SheetID         float64   `json:"sheet_id"`
+			DomainRange     string    `json:"domain_range"`
+			DataRange       string    `json:"data_range"`
+			Title           string    `json:"title"`
+			SubtotalIndices []float64 `json:"subtotal_indices"`
+			PositionRow     *float64  `json:"position_row"`
+			PositionCol     *float64  `json:"position_col"`
+			Width           *float64  `json:"width"`
+			Height          *float64  `json:"height"`
+			PositiveColor   *string   `json:"positive_color"`
+			NegativeColor   *string   `json:"negative_color"`
+			SubtotalColor   *string   `json:"subtotal_color"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+
+		// Convert subtotal indices
+		var subtotalIndices []int64
+		for _, idx := range args.SubtotalIndices {
+			subtotalIndices = append(subtotalIndices, int64(idx))
+		}
+
+		// Defaults for position and size
+		var posRow, posCol int64
+		if args.PositionRow != nil {
+			posRow = int64(*args.PositionRow)
+		}
+		if args.PositionCol != nil {
+			posCol = int64(*args.PositionCol)
+		}
+		width := int64(800)
+		if args.Width != nil {
+			width = int64(*args.Width)
+		}
+		height := int64(500)
+		if args.Height != nil {
+			height = int64(*args.Height)
+		}
+
+		// Parse colors with defaults
+		positiveColorStr := "#4285f4"
+		if args.PositiveColor != nil {
+			positiveColorStr = *args.PositiveColor
+		}
+		positiveColor, err := hexToColor(positiveColorStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid positive_color: %w", err)
+		}
+
+		negativeColorStr := "#ea4335"
+		if args.NegativeColor != nil {
+			negativeColorStr = *args.NegativeColor
+		}
+		negativeColor, err := hexToColor(negativeColorStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid negative_color: %w", err)
+		}
+
+		subtotalColorStr := "#bfbfbf"
+		if args.SubtotalColor != nil {
+			subtotalColorStr = *args.SubtotalColor
+		}
+		subtotalColor, err := hexToColor(subtotalColorStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid subtotal_color: %w", err)
+		}
+
+		chartResp, err := h.client.CreateWaterfallChart(
+			args.SpreadsheetID, int64(args.SheetID),
+			args.DomainRange, args.DataRange, args.Title,
+			subtotalIndices, posRow, posCol, width, height,
+			positiveColor, negativeColor, subtotalColor,
+		)
+		if err != nil {
+			return nil, err
+		}
+		result := map[string]interface{}{
+			"status": "waterfall_chart_created",
+		}
+		if chartResp.Chart != nil {
+			result["chartId"] = chartResp.Chart.ChartId
+		}
+		return result, nil
 
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", name)

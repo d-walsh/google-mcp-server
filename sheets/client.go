@@ -1162,3 +1162,252 @@ func (c *Client) SetColumnWidth(spreadsheetID string, sheetID int64, startColumn
 	}
 	return nil
 }
+
+// ListCharts lists all embedded charts in a spreadsheet, optionally filtered by sheetId
+func (c *Client) ListCharts(spreadsheetID string, sheetID *int64) ([]map[string]interface{}, error) {
+	spreadsheet, err := c.service.Spreadsheets.Get(spreadsheetID).Fields("sheets(properties,charts)").Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get spreadsheet charts: %w", err)
+	}
+
+	var charts []map[string]interface{}
+	for _, sheet := range spreadsheet.Sheets {
+		if sheetID != nil && sheet.Properties.SheetId != *sheetID {
+			continue
+		}
+		for _, chart := range sheet.Charts {
+			chartInfo := map[string]interface{}{
+				"chartId": chart.ChartId,
+				"sheetId": sheet.Properties.SheetId,
+			}
+
+			// Extract title
+			if chart.Spec != nil && chart.Spec.Title != "" {
+				chartInfo["title"] = chart.Spec.Title
+			}
+
+			// Detect chart type
+			if chart.Spec != nil {
+				switch {
+				case chart.Spec.BasicChart != nil:
+					chartInfo["type"] = chart.Spec.BasicChart.ChartType
+				case chart.Spec.PieChart != nil:
+					chartInfo["type"] = "PIE"
+				case chart.Spec.WaterfallChart != nil:
+					chartInfo["type"] = "WATERFALL"
+				case chart.Spec.HistogramChart != nil:
+					chartInfo["type"] = "HISTOGRAM"
+				case chart.Spec.BubbleChart != nil:
+					chartInfo["type"] = "BUBBLE"
+				case chart.Spec.CandlestickChart != nil:
+					chartInfo["type"] = "CANDLESTICK"
+				case chart.Spec.OrgChart != nil:
+					chartInfo["type"] = "ORG"
+				case chart.Spec.TreemapChart != nil:
+					chartInfo["type"] = "TREEMAP"
+				case chart.Spec.ScorecardChart != nil:
+					chartInfo["type"] = "SCORECARD"
+				default:
+					chartInfo["type"] = "UNKNOWN"
+				}
+			}
+
+			// Extract position
+			if chart.Position != nil && chart.Position.OverlayPosition != nil {
+				overlay := chart.Position.OverlayPosition
+				if overlay.AnchorCell != nil {
+					chartInfo["anchorCell"] = map[string]interface{}{
+						"sheetId":     overlay.AnchorCell.SheetId,
+						"rowIndex":    overlay.AnchorCell.RowIndex,
+						"columnIndex": overlay.AnchorCell.ColumnIndex,
+					}
+				}
+				if overlay.WidthPixels > 0 {
+					chartInfo["width"] = overlay.WidthPixels
+				}
+				if overlay.HeightPixels > 0 {
+					chartInfo["height"] = overlay.HeightPixels
+				}
+			}
+
+			charts = append(charts, chartInfo)
+		}
+	}
+
+	return charts, nil
+}
+
+// DeleteChart deletes an embedded chart by chartId
+func (c *Client) DeleteChart(spreadsheetID string, chartID int64) error {
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				DeleteEmbeddedObject: &sheets.DeleteEmbeddedObjectRequest{
+					ObjectId: chartID,
+				},
+			},
+		},
+	}
+	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to delete chart: %w", err)
+	}
+	return nil
+}
+
+// UpdateChartPosition moves and/or resizes an embedded chart
+func (c *Client) UpdateChartPosition(spreadsheetID string, chartID int64, sheetID *int64, anchorRow *int64, anchorCol *int64, width *int64, height *int64) error {
+	// We need to build the new position and determine which fields changed
+	newPosition := &sheets.EmbeddedObjectPosition{
+		OverlayPosition: &sheets.OverlayPosition{
+			AnchorCell: &sheets.GridCoordinate{},
+		},
+	}
+
+	var fields []string
+
+	if sheetID != nil {
+		newPosition.OverlayPosition.AnchorCell.SheetId = *sheetID
+		fields = append(fields, "anchorCell.sheetId")
+	}
+	if anchorRow != nil {
+		newPosition.OverlayPosition.AnchorCell.RowIndex = *anchorRow
+		fields = append(fields, "anchorCell.rowIndex")
+	}
+	if anchorCol != nil {
+		newPosition.OverlayPosition.AnchorCell.ColumnIndex = *anchorCol
+		fields = append(fields, "anchorCell.columnIndex")
+	}
+	if width != nil {
+		newPosition.OverlayPosition.WidthPixels = *width
+		fields = append(fields, "widthPixels")
+	}
+	if height != nil {
+		newPosition.OverlayPosition.HeightPixels = *height
+		fields = append(fields, "heightPixels")
+	}
+
+	if len(fields) == 0 {
+		return fmt.Errorf("at least one position field must be specified")
+	}
+
+	// Build the fields mask string
+	fieldsStr := ""
+	for i, f := range fields {
+		if i > 0 {
+			fieldsStr += ","
+		}
+		fieldsStr += f
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				UpdateEmbeddedObjectPosition: &sheets.UpdateEmbeddedObjectPositionRequest{
+					ObjectId:    chartID,
+					NewPosition: newPosition,
+					Fields:      fieldsStr,
+				},
+			},
+		},
+	}
+	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to update chart position: %w", err)
+	}
+	return nil
+}
+
+// CreateWaterfallChart creates a waterfall chart with customizable colors and subtotals
+func (c *Client) CreateWaterfallChart(spreadsheetID string, sheetID int64, domainRange string, dataRange string, title string, subtotalIndices []int64, positionRow int64, positionCol int64, width int64, height int64, positiveColor *sheets.Color, negativeColor *sheets.Color, subtotalColor *sheets.Color) (*sheets.AddChartResponse, error) {
+	domainGrid, err := parseA1Range(domainRange, sheetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse domain range %q: %w", domainRange, err)
+	}
+
+	dataGrid, err := parseA1Range(dataRange, sheetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse data range %q: %w", dataRange, err)
+	}
+
+	// Build custom subtotals
+	var customSubtotals []*sheets.WaterfallChartCustomSubtotal
+	for _, idx := range subtotalIndices {
+		customSubtotals = append(customSubtotals, &sheets.WaterfallChartCustomSubtotal{
+			SubtotalIndex: idx,
+			Label:         "",
+		})
+	}
+
+	// Connector line style (thin dashed line)
+	connectorLine := &sheets.LineStyle{
+		Type:  "MEDIUM_DASHED",
+		Width: 1,
+	}
+
+	waterfallSpec := &sheets.WaterfallChartSpec{
+		Domain: &sheets.WaterfallChartDomain{
+			Data: &sheets.ChartData{
+				SourceRange: &sheets.ChartSourceRange{
+					Sources: []*sheets.GridRange{domainGrid},
+				},
+			},
+		},
+		Series: []*sheets.WaterfallChartSeries{
+			{
+				Data: &sheets.ChartData{
+					SourceRange: &sheets.ChartSourceRange{
+						Sources: []*sheets.GridRange{dataGrid},
+					},
+				},
+				PositiveColumnsStyle: &sheets.WaterfallChartColumnStyle{
+					Color: positiveColor,
+				},
+				NegativeColumnsStyle: &sheets.WaterfallChartColumnStyle{
+					Color: negativeColor,
+				},
+				SubtotalColumnsStyle: &sheets.WaterfallChartColumnStyle{
+					Color: subtotalColor,
+				},
+				CustomSubtotals: customSubtotals,
+			},
+		},
+		ConnectorLineStyle: connectorLine,
+	}
+
+	chart := &sheets.EmbeddedChart{
+		Spec: &sheets.ChartSpec{
+			Title:          title,
+			WaterfallChart: waterfallSpec,
+		},
+		Position: &sheets.EmbeddedObjectPosition{
+			OverlayPosition: &sheets.OverlayPosition{
+				AnchorCell: &sheets.GridCoordinate{
+					SheetId:     sheetID,
+					RowIndex:    positionRow,
+					ColumnIndex: positionCol,
+				},
+				WidthPixels:  width,
+				HeightPixels: height,
+			},
+		},
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				AddChart: &sheets.AddChartRequest{
+					Chart: chart,
+				},
+			},
+		},
+	}
+	resp, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create waterfall chart: %w", err)
+	}
+	if len(resp.Replies) > 0 && resp.Replies[0].AddChart != nil {
+		return resp.Replies[0].AddChart, nil
+	}
+	return nil, fmt.Errorf("no reply from add waterfall chart request")
+}
