@@ -545,6 +545,270 @@ func (h *Handler) GetTools() []server.Tool {
 				Required: []string{"spreadsheet_id", "sheet_id", "start_column", "end_column", "width"},
 			},
 		},
+		{
+			Name:        "sheets_insert_rows",
+			Description: "Insert empty rows at a position in a sheet",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"start_index": {
+						Type:        "number",
+						Description: "0-indexed row to insert before",
+					},
+					"num_rows": {
+						Type:        "number",
+						Description: "Number of rows to insert",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "start_index", "num_rows"},
+			},
+		},
+		{
+			Name:        "sheets_delete_rows",
+			Description: "Delete rows from a sheet",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"start_index": {
+						Type:        "number",
+						Description: "0-indexed first row to delete",
+					},
+					"end_index": {
+						Type:        "number",
+						Description: "0-indexed exclusive end row",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "start_index", "end_index"},
+			},
+		},
+		{
+			Name:        "sheets_insert_columns",
+			Description: "Insert empty columns at a position in a sheet",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"start_index": {
+						Type:        "number",
+						Description: "0-indexed column to insert before",
+					},
+					"num_columns": {
+						Type:        "number",
+						Description: "Number of columns to insert",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "start_index", "num_columns"},
+			},
+		},
+		{
+			Name:        "sheets_delete_columns",
+			Description: "Delete columns from a sheet",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"start_index": {
+						Type:        "number",
+						Description: "0-indexed first column to delete",
+					},
+					"end_index": {
+						Type:        "number",
+						Description: "0-indexed exclusive end column",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "start_index", "end_index"},
+			},
+		},
+		{
+			Name:        "sheets_batch_get_values",
+			Description: "Read values from multiple ranges in one call",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"ranges": {
+						Type:        "array",
+						Description: "List of A1 notation ranges (e.g., ['Sheet1!A1:B5', 'Sheet2!C1:D10'])",
+						Items: &server.Property{
+							Type: "string",
+						},
+					},
+				},
+				Required: []string{"spreadsheet_id", "ranges"},
+			},
+		},
+		{
+			Name:        "sheets_create_chart",
+			Description: "Create an embedded chart in a sheet. The first column of the data range is used as the domain (X axis) and remaining columns become series (Y axis).",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"chart_type": {
+						Type:        "string",
+						Description: "Chart type",
+						Enum:        []string{"LINE", "BAR", "COLUMN", "PIE", "AREA", "SCATTER"},
+					},
+					"data_range": {
+						Type:        "string",
+						Description: "A1 notation for the chart data (e.g., 'A1:C10')",
+					},
+					"title": {
+						Type:        "string",
+						Description: "Chart title (optional)",
+					},
+					"position_row": {
+						Type:        "number",
+						Description: "Anchor row for chart placement (0-indexed, default 0)",
+					},
+					"position_col": {
+						Type:        "number",
+						Description: "Anchor column for chart placement (0-indexed, default 0)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "chart_type", "data_range"},
+			},
+		},
+		{
+			Name:        "sheets_freeze_columns",
+			Description: "Freeze columns on the left side of the sheet so they remain visible when scrolling horizontally",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"num_columns": {
+						Type:        "number",
+						Description: "Number of columns to freeze (default 1). Set to 0 to unfreeze",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id"},
+			},
+		},
+		{
+			Name:        "sheets_add_named_range",
+			Description: "Create a named range that can be referenced by name in formulas",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"name": {
+						Type:        "string",
+						Description: "Range name (e.g., 'NET_WORTH_TOTAL')",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"range": {
+						Type:        "string",
+						Description: "A1 notation range (e.g., 'A1:B10')",
+					},
+				},
+				Required: []string{"spreadsheet_id", "name", "sheet_id", "range"},
+			},
+		},
+		{
+			Name:        "sheets_duplicate_sheet",
+			Description: "Duplicate a sheet tab within the same spreadsheet",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID of the source sheet to duplicate",
+					},
+					"new_name": {
+						Type:        "string",
+						Description: "Name for the duplicated sheet (optional, defaults to 'Copy of <original>')",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id"},
+			},
+		},
+		{
+			Name:        "sheets_add_protected_range",
+			Description: "Protect a range from editing. Can block edits entirely or show a warning when users try to edit.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"range": {
+						Type:        "string",
+						Description: "A1 notation range to protect (e.g., 'A1:D10')",
+					},
+					"description": {
+						Type:        "string",
+						Description: "Description of why the range is protected (optional)",
+					},
+					"warning_only": {
+						Type:        "boolean",
+						Description: "Show a warning instead of blocking edits (default false)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "range"},
+			},
+		},
 	}
 }
 
@@ -1152,6 +1416,222 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 			"startColumn": args.StartColumn,
 			"endColumn":   args.EndColumn,
 			"width":       args.Width,
+		}, nil
+
+	case "sheets_insert_rows":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			StartIndex    float64 `json:"start_index"`
+			NumRows       float64 `json:"num_rows"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.InsertRows(args.SpreadsheetID, int64(args.SheetID), int64(args.StartIndex), int64(args.NumRows)); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":     "rows_inserted",
+			"startIndex": args.StartIndex,
+			"numRows":    args.NumRows,
+		}, nil
+
+	case "sheets_delete_rows":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			StartIndex    float64 `json:"start_index"`
+			EndIndex      float64 `json:"end_index"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.DeleteRows(args.SpreadsheetID, int64(args.SheetID), int64(args.StartIndex), int64(args.EndIndex)); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":     "rows_deleted",
+			"startIndex": args.StartIndex,
+			"endIndex":   args.EndIndex,
+		}, nil
+
+	case "sheets_insert_columns":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			StartIndex    float64 `json:"start_index"`
+			NumColumns    float64 `json:"num_columns"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.InsertColumns(args.SpreadsheetID, int64(args.SheetID), int64(args.StartIndex), int64(args.NumColumns)); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":     "columns_inserted",
+			"startIndex": args.StartIndex,
+			"numColumns": args.NumColumns,
+		}, nil
+
+	case "sheets_delete_columns":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			StartIndex    float64 `json:"start_index"`
+			EndIndex      float64 `json:"end_index"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.DeleteColumns(args.SpreadsheetID, int64(args.SheetID), int64(args.StartIndex), int64(args.EndIndex)); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":     "columns_deleted",
+			"startIndex": args.StartIndex,
+			"endIndex":   args.EndIndex,
+		}, nil
+
+	case "sheets_batch_get_values":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			Ranges        []string `json:"ranges"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		resp, err := h.client.BatchGetValues(args.SpreadsheetID, args.Ranges)
+		if err != nil {
+			return nil, err
+		}
+		valueRanges := make([]map[string]interface{}, len(resp.ValueRanges))
+		for i, vr := range resp.ValueRanges {
+			valueRanges[i] = map[string]interface{}{
+				"range":          vr.Range,
+				"majorDimension": vr.MajorDimension,
+				"values":         vr.Values,
+			}
+		}
+		return map[string]interface{}{
+			"spreadsheetId": resp.SpreadsheetId,
+			"valueRanges":   valueRanges,
+		}, nil
+
+	case "sheets_create_chart":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			SheetID       float64  `json:"sheet_id"`
+			ChartType     string   `json:"chart_type"`
+			DataRange     string   `json:"data_range"`
+			Title         string   `json:"title"`
+			PositionRow   *float64 `json:"position_row"`
+			PositionCol   *float64 `json:"position_col"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		var posRow, posCol int64
+		if args.PositionRow != nil {
+			posRow = int64(*args.PositionRow)
+		}
+		if args.PositionCol != nil {
+			posCol = int64(*args.PositionCol)
+		}
+		chartResp, err := h.client.CreateChart(args.SpreadsheetID, int64(args.SheetID), args.ChartType, args.DataRange, args.Title, posRow, posCol)
+		if err != nil {
+			return nil, err
+		}
+		result := map[string]interface{}{
+			"status": "chart_created",
+		}
+		if chartResp.Chart != nil {
+			result["chartId"] = chartResp.Chart.ChartId
+		}
+		return result, nil
+
+	case "sheets_freeze_columns":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			SheetID       float64  `json:"sheet_id"`
+			NumColumns    *float64 `json:"num_columns"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		numCols := int64(1) // default
+		if args.NumColumns != nil {
+			numCols = int64(*args.NumColumns)
+		}
+		if err := h.client.FreezeColumns(args.SpreadsheetID, int64(args.SheetID), numCols); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":        "frozen",
+			"frozenColumns": numCols,
+		}, nil
+
+	case "sheets_add_named_range":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			Name          string  `json:"name"`
+			SheetID       float64 `json:"sheet_id"`
+			Range         string  `json:"range"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		namedRange, err := h.client.AddNamedRange(args.SpreadsheetID, args.Name, int64(args.SheetID), args.Range)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":       "named_range_created",
+			"namedRangeId": namedRange.NamedRangeId,
+			"name":         namedRange.Name,
+		}, nil
+
+	case "sheets_duplicate_sheet":
+		var args struct {
+			SpreadsheetID string `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			NewName       string `json:"new_name"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		props, err := h.client.DuplicateSheet(args.SpreadsheetID, int64(args.SheetID), args.NewName)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":  "duplicated",
+			"sheetId": props.SheetId,
+			"title":   props.Title,
+			"index":   props.Index,
+		}, nil
+
+	case "sheets_add_protected_range":
+		var args struct {
+			SpreadsheetID string `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			Range         string `json:"range"`
+			Description   string `json:"description"`
+			WarningOnly   bool   `json:"warning_only"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		protectedRange, err := h.client.AddProtectedRange(args.SpreadsheetID, int64(args.SheetID), args.Range, args.Description, args.WarningOnly)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":           "protected",
+			"protectedRangeId": protectedRange.ProtectedRangeId,
+			"range":            args.Range,
+			"warningOnly":      args.WarningOnly,
 		}, nil
 
 	default:

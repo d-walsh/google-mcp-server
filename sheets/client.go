@@ -834,6 +834,308 @@ func (c *Client) FindReplace(spreadsheetID string, find string, replacement stri
 	return &sheets.FindReplaceResponse{}, nil
 }
 
+// InsertRows inserts empty rows at a position
+func (c *Client) InsertRows(spreadsheetID string, sheetID int64, startIndex int64, numRows int64) error {
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				InsertDimension: &sheets.InsertDimensionRequest{
+					Range: &sheets.DimensionRange{
+						SheetId:    sheetID,
+						Dimension:  "ROWS",
+						StartIndex: startIndex,
+						EndIndex:   startIndex + numRows,
+					},
+					InheritFromBefore: false,
+				},
+			},
+		},
+	}
+	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to insert rows: %w", err)
+	}
+	return nil
+}
+
+// DeleteRows deletes rows from a sheet
+func (c *Client) DeleteRows(spreadsheetID string, sheetID int64, startIndex int64, endIndex int64) error {
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				DeleteDimension: &sheets.DeleteDimensionRequest{
+					Range: &sheets.DimensionRange{
+						SheetId:    sheetID,
+						Dimension:  "ROWS",
+						StartIndex: startIndex,
+						EndIndex:   endIndex,
+					},
+				},
+			},
+		},
+	}
+	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to delete rows: %w", err)
+	}
+	return nil
+}
+
+// InsertColumns inserts empty columns at a position
+func (c *Client) InsertColumns(spreadsheetID string, sheetID int64, startIndex int64, numColumns int64) error {
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				InsertDimension: &sheets.InsertDimensionRequest{
+					Range: &sheets.DimensionRange{
+						SheetId:    sheetID,
+						Dimension:  "COLUMNS",
+						StartIndex: startIndex,
+						EndIndex:   startIndex + numColumns,
+					},
+					InheritFromBefore: false,
+				},
+			},
+		},
+	}
+	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to insert columns: %w", err)
+	}
+	return nil
+}
+
+// DeleteColumns deletes columns from a sheet
+func (c *Client) DeleteColumns(spreadsheetID string, sheetID int64, startIndex int64, endIndex int64) error {
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				DeleteDimension: &sheets.DeleteDimensionRequest{
+					Range: &sheets.DimensionRange{
+						SheetId:    sheetID,
+						Dimension:  "COLUMNS",
+						StartIndex: startIndex,
+						EndIndex:   endIndex,
+					},
+				},
+			},
+		},
+	}
+	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to delete columns: %w", err)
+	}
+	return nil
+}
+
+// BatchGetValues reads values from multiple ranges in one call
+func (c *Client) BatchGetValues(spreadsheetID string, ranges []string) (*sheets.BatchGetValuesResponse, error) {
+	resp, err := c.service.Spreadsheets.Values.BatchGet(spreadsheetID).Ranges(ranges...).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch get values: %w", err)
+	}
+	return resp, nil
+}
+
+// CreateChart creates an embedded chart in a sheet
+func (c *Client) CreateChart(spreadsheetID string, sheetID int64, chartType string, dataRange string, title string, positionRow int64, positionCol int64) (*sheets.AddChartResponse, error) {
+	gridRange, err := parseA1Range(dataRange, sheetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse data range %q: %w", dataRange, err)
+	}
+
+	basicChart := &sheets.BasicChartSpec{
+		ChartType: chartType,
+		Axis: []*sheets.BasicChartAxis{
+			{Position: "BOTTOM_AXIS"},
+			{Position: "LEFT_AXIS"},
+		},
+		Domains: []*sheets.BasicChartDomain{
+			{
+				Domain: &sheets.ChartData{
+					SourceRange: &sheets.ChartSourceRange{
+						Sources: []*sheets.GridRange{
+							{
+								SheetId:          gridRange.SheetId,
+								StartRowIndex:    gridRange.StartRowIndex,
+								EndRowIndex:      gridRange.EndRowIndex,
+								StartColumnIndex: gridRange.StartColumnIndex,
+								EndColumnIndex:   gridRange.StartColumnIndex + 1,
+							},
+						},
+					},
+				},
+			},
+		},
+		Series: []*sheets.BasicChartSeries{},
+	}
+
+	// Add series for each column after the first (domain) column
+	for col := gridRange.StartColumnIndex + 1; col < gridRange.EndColumnIndex; col++ {
+		basicChart.Series = append(basicChart.Series, &sheets.BasicChartSeries{
+			Series: &sheets.ChartData{
+				SourceRange: &sheets.ChartSourceRange{
+					Sources: []*sheets.GridRange{
+						{
+							SheetId:          gridRange.SheetId,
+							StartRowIndex:    gridRange.StartRowIndex,
+							EndRowIndex:      gridRange.EndRowIndex,
+							StartColumnIndex: col,
+							EndColumnIndex:   col + 1,
+						},
+					},
+				},
+			},
+			TargetAxis: "LEFT_AXIS",
+		})
+	}
+
+	chart := &sheets.EmbeddedChart{
+		Spec: &sheets.ChartSpec{
+			Title:          title,
+			BasicChart:     basicChart,
+		},
+		Position: &sheets.EmbeddedObjectPosition{
+			OverlayPosition: &sheets.OverlayPosition{
+				AnchorCell: &sheets.GridCoordinate{
+					SheetId:     sheetID,
+					RowIndex:    positionRow,
+					ColumnIndex: positionCol,
+				},
+			},
+		},
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				AddChart: &sheets.AddChartRequest{
+					Chart: chart,
+				},
+			},
+		},
+	}
+	resp, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chart: %w", err)
+	}
+	if len(resp.Replies) > 0 && resp.Replies[0].AddChart != nil {
+		return resp.Replies[0].AddChart, nil
+	}
+	return nil, fmt.Errorf("no reply from add chart request")
+}
+
+// FreezeColumns freezes columns on the left side of the sheet
+func (c *Client) FreezeColumns(spreadsheetID string, sheetID int64, numColumns int64) error {
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				UpdateSheetProperties: &sheets.UpdateSheetPropertiesRequest{
+					Properties: &sheets.SheetProperties{
+						SheetId: sheetID,
+						GridProperties: &sheets.GridProperties{
+							FrozenColumnCount: numColumns,
+						},
+					},
+					Fields: "gridProperties.frozenColumnCount",
+				},
+			},
+		},
+	}
+	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to freeze columns: %w", err)
+	}
+	return nil
+}
+
+// AddNamedRange creates a named range in a spreadsheet
+func (c *Client) AddNamedRange(spreadsheetID string, name string, sheetID int64, rangeA1 string) (*sheets.NamedRange, error) {
+	gridRange, err := parseA1Range(rangeA1, sheetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse range %q: %w", rangeA1, err)
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				AddNamedRange: &sheets.AddNamedRangeRequest{
+					NamedRange: &sheets.NamedRange{
+						Name:  name,
+						Range: gridRange,
+					},
+				},
+			},
+		},
+	}
+	resp, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to add named range: %w", err)
+	}
+	if len(resp.Replies) > 0 && resp.Replies[0].AddNamedRange != nil {
+		return resp.Replies[0].AddNamedRange.NamedRange, nil
+	}
+	return nil, fmt.Errorf("no reply from add named range request")
+}
+
+// DuplicateSheet duplicates a sheet tab within the same spreadsheet
+func (c *Client) DuplicateSheet(spreadsheetID string, sheetID int64, newName string) (*sheets.SheetProperties, error) {
+	dupReq := &sheets.DuplicateSheetRequest{
+		SourceSheetId: sheetID,
+	}
+	if newName != "" {
+		dupReq.NewSheetName = newName
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				DuplicateSheet: dupReq,
+			},
+		},
+	}
+	resp, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to duplicate sheet: %w", err)
+	}
+	if len(resp.Replies) > 0 && resp.Replies[0].DuplicateSheet != nil {
+		return resp.Replies[0].DuplicateSheet.Properties, nil
+	}
+	return nil, fmt.Errorf("no reply from duplicate sheet request")
+}
+
+// AddProtectedRange protects a range from editing
+func (c *Client) AddProtectedRange(spreadsheetID string, sheetID int64, rangeA1 string, description string, warningOnly bool) (*sheets.ProtectedRange, error) {
+	gridRange, err := parseA1Range(rangeA1, sheetID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse range %q: %w", rangeA1, err)
+	}
+
+	protectedRange := &sheets.ProtectedRange{
+		Range:       gridRange,
+		Description: description,
+		WarningOnly: warningOnly,
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				AddProtectedRange: &sheets.AddProtectedRangeRequest{
+					ProtectedRange: protectedRange,
+				},
+			},
+		},
+	}
+	resp, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to add protected range: %w", err)
+	}
+	if len(resp.Replies) > 0 && resp.Replies[0].AddProtectedRange != nil {
+		return resp.Replies[0].AddProtectedRange.ProtectedRange, nil
+	}
+	return nil, fmt.Errorf("no reply from add protected range request")
+}
+
 // SetColumnWidth sets the width of columns in a range
 func (c *Client) SetColumnWidth(spreadsheetID string, sheetID int64, startColumn int64, endColumn int64, width int64) error {
 	req := &sheets.BatchUpdateSpreadsheetRequest{
