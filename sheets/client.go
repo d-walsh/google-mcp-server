@@ -937,42 +937,50 @@ func (c *Client) BatchGetValues(spreadsheetID string, ranges []string) (*sheets.
 	return resp, nil
 }
 
-// CreateChart creates an embedded chart in a sheet
-func (c *Client) CreateChart(spreadsheetID string, sheetID int64, chartType string, dataRange string, title string, positionRow int64, positionCol int64) (*sheets.AddChartResponse, error) {
+// CreateChart creates an embedded chart in a sheet.
+// Supports BasicChartSpec types (LINE, BAR, COLUMN, AREA, SCATTER),
+// PieChartSpec (PIE), and WaterfallChartSpec (WATERFALL).
+func (c *Client) CreateChart(spreadsheetID string, sheetID int64, chartType string, dataRange string, title string, positionRow int64, positionCol int64, legendPosition string, stacked bool, width int64, height int64) (*sheets.AddChartResponse, error) {
 	gridRange, err := parseA1Range(dataRange, sheetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse data range %q: %w", dataRange, err)
 	}
 
-	basicChart := &sheets.BasicChartSpec{
-		ChartType: chartType,
-		Axis: []*sheets.BasicChartAxis{
-			{Position: "BOTTOM_AXIS"},
-			{Position: "LEFT_AXIS"},
-		},
-		Domains: []*sheets.BasicChartDomain{
-			{
-				Domain: &sheets.ChartData{
-					SourceRange: &sheets.ChartSourceRange{
-						Sources: []*sheets.GridRange{
-							{
-								SheetId:          gridRange.SheetId,
-								StartRowIndex:    gridRange.StartRowIndex,
-								EndRowIndex:      gridRange.EndRowIndex,
-								StartColumnIndex: gridRange.StartColumnIndex,
-								EndColumnIndex:   gridRange.StartColumnIndex + 1,
-							},
-						},
-					},
-				},
-			},
-		},
-		Series: []*sheets.BasicChartSeries{},
+	// Default legend position
+	if legendPosition == "" {
+		legendPosition = "BOTTOM_LEGEND"
 	}
 
-	// Add series for each column after the first (domain) column
-	for col := gridRange.StartColumnIndex + 1; col < gridRange.EndColumnIndex; col++ {
-		basicChart.Series = append(basicChart.Series, &sheets.BasicChartSeries{
+	// Default dimensions
+	if width <= 0 {
+		width = 700
+	}
+	if height <= 0 {
+		height = 400
+	}
+
+	// Domain range: first column of data_range
+	domainGridRange := &sheets.GridRange{
+		SheetId:          gridRange.SheetId,
+		StartRowIndex:    gridRange.StartRowIndex,
+		EndRowIndex:      gridRange.EndRowIndex,
+		StartColumnIndex: gridRange.StartColumnIndex,
+		EndColumnIndex:   gridRange.StartColumnIndex + 1,
+	}
+
+	chartSpec := &sheets.ChartSpec{
+		Title: title,
+	}
+
+	switch chartType {
+	case "PIE":
+		pieChart := &sheets.PieChartSpec{
+			LegendPosition: legendPosition,
+			Domain: &sheets.ChartData{
+				SourceRange: &sheets.ChartSourceRange{
+					Sources: []*sheets.GridRange{domainGridRange},
+				},
+			},
 			Series: &sheets.ChartData{
 				SourceRange: &sheets.ChartSourceRange{
 					Sources: []*sheets.GridRange{
@@ -980,21 +988,112 @@ func (c *Client) CreateChart(spreadsheetID string, sheetID int64, chartType stri
 							SheetId:          gridRange.SheetId,
 							StartRowIndex:    gridRange.StartRowIndex,
 							EndRowIndex:      gridRange.EndRowIndex,
-							StartColumnIndex: col,
-							EndColumnIndex:   col + 1,
+							StartColumnIndex: gridRange.StartColumnIndex + 1,
+							EndColumnIndex:   gridRange.StartColumnIndex + 2,
 						},
 					},
 				},
 			},
-			TargetAxis: "LEFT_AXIS",
-		})
+		}
+		chartSpec.PieChart = pieChart
+
+	case "WATERFALL":
+		// Default colors for waterfall
+		positiveColor := &sheets.Color{Red: 0.259, Green: 0.522, Blue: 0.957} // #4285f4
+		negativeColor := &sheets.Color{Red: 0.918, Green: 0.263, Blue: 0.208} // #ea4335
+		subtotalColor := &sheets.Color{Red: 0.749, Green: 0.749, Blue: 0.749} // #bfbfbf
+
+		waterfallSpec := &sheets.WaterfallChartSpec{
+			Domain: &sheets.WaterfallChartDomain{
+				Data: &sheets.ChartData{
+					SourceRange: &sheets.ChartSourceRange{
+						Sources: []*sheets.GridRange{domainGridRange},
+					},
+				},
+			},
+			Series: []*sheets.WaterfallChartSeries{
+				{
+					Data: &sheets.ChartData{
+						SourceRange: &sheets.ChartSourceRange{
+							Sources: []*sheets.GridRange{
+								{
+									SheetId:          gridRange.SheetId,
+									StartRowIndex:    gridRange.StartRowIndex,
+									EndRowIndex:      gridRange.EndRowIndex,
+									StartColumnIndex: gridRange.StartColumnIndex + 1,
+									EndColumnIndex:   gridRange.StartColumnIndex + 2,
+								},
+							},
+						},
+					},
+					PositiveColumnsStyle: &sheets.WaterfallChartColumnStyle{
+						Color: positiveColor,
+					},
+					NegativeColumnsStyle: &sheets.WaterfallChartColumnStyle{
+						Color: negativeColor,
+					},
+					SubtotalColumnsStyle: &sheets.WaterfallChartColumnStyle{
+						Color: subtotalColor,
+					},
+				},
+			},
+			ConnectorLineStyle: &sheets.LineStyle{
+				Type:  "MEDIUM_DASHED",
+				Width: 1,
+			},
+		}
+		chartSpec.WaterfallChart = waterfallSpec
+
+	default:
+		// BasicChartSpec for LINE, BAR, COLUMN, AREA, SCATTER
+		basicChart := &sheets.BasicChartSpec{
+			ChartType:      chartType,
+			LegendPosition: legendPosition,
+			Axis: []*sheets.BasicChartAxis{
+				{Position: "BOTTOM_AXIS"},
+				{Position: "LEFT_AXIS"},
+			},
+			Domains: []*sheets.BasicChartDomain{
+				{
+					Domain: &sheets.ChartData{
+						SourceRange: &sheets.ChartSourceRange{
+							Sources: []*sheets.GridRange{domainGridRange},
+						},
+					},
+				},
+			},
+			Series: []*sheets.BasicChartSeries{},
+		}
+
+		if stacked {
+			basicChart.StackedType = "STACKED"
+		}
+
+		// Add series for each column after the first (domain) column
+		for col := gridRange.StartColumnIndex + 1; col < gridRange.EndColumnIndex; col++ {
+			basicChart.Series = append(basicChart.Series, &sheets.BasicChartSeries{
+				Series: &sheets.ChartData{
+					SourceRange: &sheets.ChartSourceRange{
+						Sources: []*sheets.GridRange{
+							{
+								SheetId:          gridRange.SheetId,
+								StartRowIndex:    gridRange.StartRowIndex,
+								EndRowIndex:      gridRange.EndRowIndex,
+								StartColumnIndex: col,
+								EndColumnIndex:   col + 1,
+							},
+						},
+					},
+				},
+				TargetAxis: "LEFT_AXIS",
+			})
+		}
+
+		chartSpec.BasicChart = basicChart
 	}
 
 	chart := &sheets.EmbeddedChart{
-		Spec: &sheets.ChartSpec{
-			Title:      title,
-			BasicChart: basicChart,
-		},
+		Spec: chartSpec,
 		Position: &sheets.EmbeddedObjectPosition{
 			OverlayPosition: &sheets.OverlayPosition{
 				AnchorCell: &sheets.GridCoordinate{
@@ -1002,6 +1101,8 @@ func (c *Client) CreateChart(spreadsheetID string, sheetID int64, chartType stri
 					RowIndex:    positionRow,
 					ColumnIndex: positionCol,
 				},
+				WidthPixels:  width,
+				HeightPixels: height,
 			},
 		},
 	}
@@ -1314,6 +1415,222 @@ func (c *Client) UpdateChartPosition(spreadsheetID string, chartID int64, sheetI
 	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
 	if err != nil {
 		return fmt.Errorf("failed to update chart position: %w", err)
+	}
+	return nil
+}
+
+// UpdateChartSpec updates an existing chart's spec (title, type, data range).
+// It fetches the current spec, modifies the requested fields, and sends the full spec back.
+func (c *Client) UpdateChartSpec(spreadsheetID string, chartID int64, newTitle *string, newChartType *string, newDataRange *string, dataRangeSheetID *int64) error {
+	// Fetch current spreadsheet to find the chart
+	spreadsheet, err := c.service.Spreadsheets.Get(spreadsheetID).Fields("sheets.charts").Do()
+	if err != nil {
+		return fmt.Errorf("failed to get spreadsheet charts: %w", err)
+	}
+
+	// Find the chart by ID
+	var currentChart *sheets.EmbeddedChart
+	for _, sheet := range spreadsheet.Sheets {
+		for _, ch := range sheet.Charts {
+			if ch.ChartId == chartID {
+				currentChart = ch
+				break
+			}
+		}
+		if currentChart != nil {
+			break
+		}
+	}
+	if currentChart == nil {
+		return fmt.Errorf("chart with ID %d not found", chartID)
+	}
+
+	spec := currentChart.Spec
+	if spec == nil {
+		spec = &sheets.ChartSpec{}
+	}
+
+	// Update title if requested
+	if newTitle != nil {
+		spec.Title = *newTitle
+		// Use ForceSendFields to ensure empty string is sent
+		spec.ForceSendFields = append(spec.ForceSendFields, "Title")
+	}
+
+	// Update chart type and/or data range
+	if newChartType != nil || newDataRange != nil {
+		chartType := ""
+		if newChartType != nil {
+			chartType = *newChartType
+		} else {
+			// Detect current chart type
+			switch {
+			case spec.BasicChart != nil:
+				chartType = spec.BasicChart.ChartType
+			case spec.PieChart != nil:
+				chartType = "PIE"
+			case spec.WaterfallChart != nil:
+				chartType = "WATERFALL"
+			default:
+				chartType = "COLUMN"
+			}
+		}
+
+		// If data range is changing, we need a sheet ID for GridRange
+		if newDataRange != nil {
+			if dataRangeSheetID == nil {
+				return fmt.Errorf("sheet_id is required when changing data_range")
+			}
+			sheetID := *dataRangeSheetID
+			gridRange, err := parseA1Range(*newDataRange, sheetID)
+			if err != nil {
+				return fmt.Errorf("failed to parse data range %q: %w", *newDataRange, err)
+			}
+
+			domainGridRange := &sheets.GridRange{
+				SheetId:          gridRange.SheetId,
+				StartRowIndex:    gridRange.StartRowIndex,
+				EndRowIndex:      gridRange.EndRowIndex,
+				StartColumnIndex: gridRange.StartColumnIndex,
+				EndColumnIndex:   gridRange.StartColumnIndex + 1,
+			}
+
+			// Clear all chart-type-specific specs
+			spec.BasicChart = nil
+			spec.PieChart = nil
+			spec.WaterfallChart = nil
+
+			switch chartType {
+			case "PIE":
+				spec.PieChart = &sheets.PieChartSpec{
+					LegendPosition: "RIGHT_LEGEND",
+					Domain: &sheets.ChartData{
+						SourceRange: &sheets.ChartSourceRange{
+							Sources: []*sheets.GridRange{domainGridRange},
+						},
+					},
+					Series: &sheets.ChartData{
+						SourceRange: &sheets.ChartSourceRange{
+							Sources: []*sheets.GridRange{
+								{
+									SheetId:          gridRange.SheetId,
+									StartRowIndex:    gridRange.StartRowIndex,
+									EndRowIndex:      gridRange.EndRowIndex,
+									StartColumnIndex: gridRange.StartColumnIndex + 1,
+									EndColumnIndex:   gridRange.StartColumnIndex + 2,
+								},
+							},
+						},
+					},
+				}
+			case "WATERFALL":
+				spec.WaterfallChart = &sheets.WaterfallChartSpec{
+					Domain: &sheets.WaterfallChartDomain{
+						Data: &sheets.ChartData{
+							SourceRange: &sheets.ChartSourceRange{
+								Sources: []*sheets.GridRange{domainGridRange},
+							},
+						},
+					},
+					Series: []*sheets.WaterfallChartSeries{
+						{
+							Data: &sheets.ChartData{
+								SourceRange: &sheets.ChartSourceRange{
+									Sources: []*sheets.GridRange{
+										{
+											SheetId:          gridRange.SheetId,
+											StartRowIndex:    gridRange.StartRowIndex,
+											EndRowIndex:      gridRange.EndRowIndex,
+											StartColumnIndex: gridRange.StartColumnIndex + 1,
+											EndColumnIndex:   gridRange.StartColumnIndex + 2,
+										},
+									},
+								},
+							},
+							PositiveColumnsStyle: &sheets.WaterfallChartColumnStyle{
+								Color: &sheets.Color{Red: 0.259, Green: 0.522, Blue: 0.957},
+							},
+							NegativeColumnsStyle: &sheets.WaterfallChartColumnStyle{
+								Color: &sheets.Color{Red: 0.918, Green: 0.263, Blue: 0.208},
+							},
+							SubtotalColumnsStyle: &sheets.WaterfallChartColumnStyle{
+								Color: &sheets.Color{Red: 0.749, Green: 0.749, Blue: 0.749},
+							},
+						},
+					},
+					ConnectorLineStyle: &sheets.LineStyle{
+						Type:  "MEDIUM_DASHED",
+						Width: 1,
+					},
+				}
+			default:
+				basicChart := &sheets.BasicChartSpec{
+					ChartType:      chartType,
+					LegendPosition: "BOTTOM_LEGEND",
+					Axis: []*sheets.BasicChartAxis{
+						{Position: "BOTTOM_AXIS"},
+						{Position: "LEFT_AXIS"},
+					},
+					Domains: []*sheets.BasicChartDomain{
+						{
+							Domain: &sheets.ChartData{
+								SourceRange: &sheets.ChartSourceRange{
+									Sources: []*sheets.GridRange{domainGridRange},
+								},
+							},
+						},
+					},
+					Series: []*sheets.BasicChartSeries{},
+				}
+				for col := gridRange.StartColumnIndex + 1; col < gridRange.EndColumnIndex; col++ {
+					basicChart.Series = append(basicChart.Series, &sheets.BasicChartSeries{
+						Series: &sheets.ChartData{
+							SourceRange: &sheets.ChartSourceRange{
+								Sources: []*sheets.GridRange{
+									{
+										SheetId:          gridRange.SheetId,
+										StartRowIndex:    gridRange.StartRowIndex,
+										EndRowIndex:      gridRange.EndRowIndex,
+										StartColumnIndex: col,
+										EndColumnIndex:   col + 1,
+									},
+								},
+							},
+						},
+						TargetAxis: "LEFT_AXIS",
+					})
+				}
+				spec.BasicChart = basicChart
+			}
+		} else if newChartType != nil {
+			// Type change without data range change — only works for basic chart types
+			// switching between themselves, since we keep the existing data configuration
+			switch chartType {
+			case "PIE", "WATERFALL":
+				return fmt.Errorf("changing to %s requires providing a new data_range", chartType)
+			default:
+				if spec.BasicChart != nil {
+					spec.BasicChart.ChartType = chartType
+				} else {
+					return fmt.Errorf("cannot change chart type from non-basic to %s without providing data_range", chartType)
+				}
+			}
+		}
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				UpdateChartSpec: &sheets.UpdateChartSpecRequest{
+					ChartId: chartID,
+					Spec:    spec,
+				},
+			},
+		},
+	}
+	_, err = c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to update chart spec: %w", err)
 	}
 	return nil
 }

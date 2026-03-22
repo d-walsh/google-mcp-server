@@ -672,7 +672,7 @@ func (h *Handler) GetTools() []server.Tool {
 		},
 		{
 			Name:        "sheets_create_chart",
-			Description: "Create an embedded chart in a sheet. The first column of the data range is used as the domain (X axis) and remaining columns become series (Y axis).",
+			Description: "Create an embedded chart in a sheet. The first column of the data range is used as the domain (X axis) and remaining columns become series (Y axis). For PIE charts, column 0 is domain and column 1 is the series. For WATERFALL charts, column 0 is domain and column 1 is values with default positive/negative/subtotal colors.",
 			InputSchema: server.InputSchema{
 				Type: "object",
 				Properties: map[string]server.Property{
@@ -686,8 +686,8 @@ func (h *Handler) GetTools() []server.Tool {
 					},
 					"chart_type": {
 						Type:        "string",
-						Description: "Chart type",
-						Enum:        []string{"LINE", "BAR", "COLUMN", "PIE", "AREA", "SCATTER"},
+						Description: "Chart type. PIE uses PieChartSpec, WATERFALL uses WaterfallChartSpec, all others use BasicChartSpec.",
+						Enum:        []string{"LINE", "BAR", "COLUMN", "PIE", "AREA", "SCATTER", "WATERFALL"},
 					},
 					"data_range": {
 						Type:        "string",
@@ -704,6 +704,23 @@ func (h *Handler) GetTools() []server.Tool {
 					"position_col": {
 						Type:        "number",
 						Description: "Anchor column for chart placement (0-indexed, default 0)",
+					},
+					"legend_position": {
+						Type:        "string",
+						Description: "Legend position (default 'BOTTOM_LEGEND')",
+						Enum:        []string{"BOTTOM_LEGEND", "RIGHT_LEGEND", "TOP_LEGEND", "NO_LEGEND"},
+					},
+					"stacked": {
+						Type:        "boolean",
+						Description: "If true, stack series (only applies to BAR, COLUMN, AREA). Default false.",
+					},
+					"width": {
+						Type:        "number",
+						Description: "Chart width in pixels (default 700)",
+					},
+					"height": {
+						Type:        "number",
+						Description: "Chart height in pixels (default 400)",
 					},
 				},
 				Required: []string{"spreadsheet_id", "sheet_id", "chart_type", "data_range"},
@@ -878,6 +895,41 @@ func (h *Handler) GetTools() []server.Tool {
 					"height": {
 						Type:        "number",
 						Description: "New height in pixels (optional)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "chart_id"},
+			},
+		},
+		{
+			Name:        "sheets_update_chart",
+			Description: "Update an existing chart's title, type, or data range without deleting and recreating it. Fetches the current chart spec, modifies only the specified fields, and sends the updated spec back.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"chart_id": {
+						Type:        "number",
+						Description: "Chart ID to update (from sheets_list_charts)",
+					},
+					"title": {
+						Type:        "string",
+						Description: "New chart title (optional)",
+					},
+					"chart_type": {
+						Type:        "string",
+						Description: "New chart type (optional). When changing to PIE or WATERFALL, data_range must also be provided.",
+						Enum:        []string{"LINE", "BAR", "COLUMN", "PIE", "AREA", "SCATTER", "WATERFALL"},
+					},
+					"data_range": {
+						Type:        "string",
+						Description: "New data range in A1 notation (optional). Requires sheet_id.",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID — required when changing data_range (needed for GridRange conversion)",
 					},
 				},
 				Required: []string{"spreadsheet_id", "chart_id"},
@@ -1787,13 +1839,17 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 
 	case "sheets_create_chart":
 		var args struct {
-			SpreadsheetID string   `json:"spreadsheet_id"`
-			SheetID       float64  `json:"sheet_id"`
-			ChartType     string   `json:"chart_type"`
-			DataRange     string   `json:"data_range"`
-			Title         string   `json:"title"`
-			PositionRow   *float64 `json:"position_row"`
-			PositionCol   *float64 `json:"position_col"`
+			SpreadsheetID  string   `json:"spreadsheet_id"`
+			SheetID        float64  `json:"sheet_id"`
+			ChartType      string   `json:"chart_type"`
+			DataRange      string   `json:"data_range"`
+			Title          string   `json:"title"`
+			PositionRow    *float64 `json:"position_row"`
+			PositionCol    *float64 `json:"position_col"`
+			LegendPosition string   `json:"legend_position"`
+			Stacked        bool     `json:"stacked"`
+			Width          *float64 `json:"width"`
+			Height         *float64 `json:"height"`
 		}
 		if err := json.Unmarshal(arguments, &args); err != nil {
 			return nil, fmt.Errorf("invalid arguments: %w", err)
@@ -1805,7 +1861,14 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 		if args.PositionCol != nil {
 			posCol = int64(*args.PositionCol)
 		}
-		chartResp, err := h.client.CreateChart(args.SpreadsheetID, int64(args.SheetID), args.ChartType, args.DataRange, args.Title, posRow, posCol)
+		var width, height int64
+		if args.Width != nil {
+			width = int64(*args.Width)
+		}
+		if args.Height != nil {
+			height = int64(*args.Height)
+		}
+		chartResp, err := h.client.CreateChart(args.SpreadsheetID, int64(args.SheetID), args.ChartType, args.DataRange, args.Title, posRow, posCol, args.LegendPosition, args.Stacked, width, height)
 		if err != nil {
 			return nil, err
 		}
@@ -1979,6 +2042,41 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 			"status":  "position_updated",
 			"chartId": int64(args.ChartID),
 		}, nil
+
+	case "sheets_update_chart":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			ChartID       float64  `json:"chart_id"`
+			Title         *string  `json:"title"`
+			ChartType     *string  `json:"chart_type"`
+			DataRange     *string  `json:"data_range"`
+			SheetID       *float64 `json:"sheet_id"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		var dataRangeSheetID *int64
+		if args.SheetID != nil {
+			v := int64(*args.SheetID)
+			dataRangeSheetID = &v
+		}
+		if err := h.client.UpdateChartSpec(args.SpreadsheetID, int64(args.ChartID), args.Title, args.ChartType, args.DataRange, dataRangeSheetID); err != nil {
+			return nil, err
+		}
+		result := map[string]interface{}{
+			"status":  "chart_updated",
+			"chartId": int64(args.ChartID),
+		}
+		if args.Title != nil {
+			result["newTitle"] = *args.Title
+		}
+		if args.ChartType != nil {
+			result["newChartType"] = *args.ChartType
+		}
+		if args.DataRange != nil {
+			result["newDataRange"] = *args.DataRange
+		}
+		return result, nil
 
 	case "sheets_set_number_format":
 		var args struct {
