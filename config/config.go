@@ -11,9 +11,10 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	OAuth    auth.OAuthConfig `json:"oauth"`
-	Services ServicesConfig   `json:"services"`
-	Global   GlobalConfig     `json:"global"`
+	OAuth          auth.OAuthConfig `json:"oauth"`
+	DefaultAccount string           `json:"default_account,omitempty"`
+	Services       ServicesConfig   `json:"services"`
+	Global         GlobalConfig     `json:"global"`
 }
 
 // ServicesConfig represents configuration for all services
@@ -165,6 +166,9 @@ func (c *Config) loadFromEnv() error {
 	}
 	if tokenFile := os.Getenv("GOOGLE_TOKEN_FILE"); tokenFile != "" {
 		c.OAuth.TokenFile = tokenFile
+	}
+	if defaultAccount := os.Getenv("GOOGLE_DEFAULT_ACCOUNT"); defaultAccount != "" {
+		c.DefaultAccount = defaultAccount
 	}
 
 	// Service enable/disable flags

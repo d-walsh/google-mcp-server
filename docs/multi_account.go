@@ -49,17 +49,9 @@ func (h *MultiAccountHandler) getClientForAccount(ctx context.Context, account *
 	return &Client{service: service}, nil
 }
 
-// resolveAccount resolves an account from the hint or falls back to defaults
+// resolveAccount resolves an account — requires explicit account when multiple exist
 func (h *MultiAccountHandler) resolveAccount(ctx context.Context, accountHint string) (*auth.Account, error) {
-	account, err := h.accountManager.GetAccountForContext(ctx, accountHint)
-	if err != nil || account == nil {
-		accounts := h.accountManager.ListAccounts()
-		if len(accounts) > 0 {
-			return accounts[0], nil
-		}
-		return nil, ErrNoAccount
-	}
-	return account, nil
+	return h.accountManager.ResolveAccount(ctx, accountHint)
 }
 
 // HandleToolCall routes tool calls to the appropriate account

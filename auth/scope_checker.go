@@ -93,8 +93,15 @@ func (am *AccountManager) GetTokenScopes(ctx context.Context, account *Account) 
 		return nil, fmt.Errorf("no token available for account: %s", account.Email)
 	}
 
-	// Create a temporary client with the token
+	// Create a temporary client with the token and get fresh access token
 	tokenSource := am.oauthConfig.TokenSource(ctx, account.Token)
+
+	// Get the (possibly refreshed) token from the source
+	freshToken, err := tokenSource.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get fresh token: %w", err)
+	}
+
 	httpClient := oauth2.NewClient(ctx, tokenSource)
 
 	// Use the tokeninfo endpoint to get scope information
@@ -103,7 +110,8 @@ func (am *AccountManager) GetTokenScopes(ctx context.Context, account *Account) 
 		return nil, fmt.Errorf("failed to create oauth2 service: %w", err)
 	}
 
-	tokenInfo, err := oauth2Service.Tokeninfo().AccessToken(account.Token.AccessToken).Do()
+	// Use the fresh access token, not the potentially stale one from account.Token
+	tokenInfo, err := oauth2Service.Tokeninfo().AccessToken(freshToken.AccessToken).Do()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token info: %w", err)
 	}

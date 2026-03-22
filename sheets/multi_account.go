@@ -58,14 +58,10 @@ func (h *MultiAccountHandler) HandleToolCall(ctx context.Context, name string, a
 		}
 	}
 
-	// Get account from context
-	account, err := h.accountManager.GetAccountForContext(ctx, accountHint)
-	if err != nil || account == nil {
-		// Try to use the first available account
-		accounts := h.accountManager.ListAccounts()
-		if len(accounts) > 0 {
-			account = accounts[0]
-		}
+	// Resolve account — requires explicit account when multiple exist
+	account, err := h.accountManager.ResolveAccount(ctx, accountHint)
+	if err != nil {
+		return nil, err
 	}
 
 	var client *Client

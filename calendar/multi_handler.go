@@ -406,13 +406,10 @@ func (h *MultiAccountHandler) getClientForAccount(ctx context.Context, email str
 	// Get account from manager
 	account, err := h.accountManager.GetAccount(email)
 	if err != nil {
-		// If specific account not found, try to find one
 		if email == "" {
-			accounts := h.accountManager.ListAccounts()
-			if len(accounts) > 0 {
-				account = accounts[0]
-			} else {
-				return nil, fmt.Errorf("no authenticated accounts available")
+			account, err = h.accountManager.ResolveAccount(ctx, "")
+			if err != nil {
+				return nil, err
 			}
 		} else {
 			return nil, err
@@ -953,9 +950,9 @@ func (h *MultiAccountHandler) handleEventRespond(ctx context.Context, arguments 
 	// Get user's email to match the attendee entry
 	accountEmail := args.Account
 	if accountEmail == "" {
-		accounts := h.accountManager.ListAccounts()
-		if len(accounts) > 0 {
-			accountEmail = accounts[0].Email
+		acct, err := h.accountManager.ResolveAccount(ctx, "")
+		if err == nil && acct != nil {
+			accountEmail = acct.Email
 		}
 	}
 

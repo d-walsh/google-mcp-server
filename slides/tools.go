@@ -486,27 +486,12 @@ func (s *Service) HandleToolCall(ctx context.Context, name string, arguments jso
 		return nil, err
 	}
 
-	// Get account email if specified
-	accountEmail, _ := args["account"].(string)
-
-	// Get account and HTTP client
-	var account *auth.Account
-	var httpClient *http.Client
-
-	if accountEmail != "" {
-		var err error
-		account, err = s.authManager.GetAccount(accountEmail)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get account: %w", err)
-		}
-	} else {
-		// Use first available account
-		accounts := s.authManager.ListAccounts()
-		if len(accounts) == 0 {
-			return nil, fmt.Errorf("no authenticated accounts available. Please authenticate using accounts_add")
-		}
-		account = accounts[0]
+	// Resolve account — requires explicit "account" param when multiple accounts exist
+	account, err := s.authManager.ResolveAccountFromArgs(ctx, args)
+	if err != nil {
+		return nil, err
 	}
+	var httpClient *http.Client
 
 	// Check if account has required scopes for Slides
 	if err := s.authManager.CheckScopes(ctx, account, "slides"); err != nil {

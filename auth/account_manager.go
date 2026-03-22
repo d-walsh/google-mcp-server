@@ -18,10 +18,37 @@ import (
 
 // AccountManager manages multiple Google accounts
 type AccountManager struct {
-	accounts    map[string]*Account
-	configDir   string
-	oauthConfig *oauth2.Config
-	mu          sync.RWMutex
+	accounts       map[string]*Account
+	configDir      string
+	oauthConfig    *oauth2.Config
+	defaultAccount string
+	mu             sync.RWMutex
+}
+
+// SetDefaultAccount sets the default account email used when no account is specified
+func (am *AccountManager) SetDefaultAccount(email string) {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	am.defaultAccount = email
+}
+
+// ResolveAccount is the single shared entry point for all services to resolve an account.
+// Pass the "account" string from tool args (may be empty).
+// - If account email is specified, returns that account.
+// - If only one account exists, returns it.
+// - If multiple accounts exist and no email specified, returns an error listing available accounts.
+func (am *AccountManager) ResolveAccount(ctx context.Context, accountParam string) (*Account, error) {
+	if accountParam != "" {
+		return am.GetAccount(accountParam)
+	}
+	return am.GetAccountForContext(ctx, "")
+}
+
+// ResolveAccountFromArgs extracts the "account" key from a tool args map and resolves it.
+// This is the standard pattern all service tool handlers should use.
+func (am *AccountManager) ResolveAccountFromArgs(ctx context.Context, args map[string]interface{}) (*Account, error) {
+	accountEmail, _ := args["account"].(string)
+	return am.ResolveAccount(ctx, accountEmail)
 }
 
 // Account represents a single authenticated Google account

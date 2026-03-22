@@ -43,40 +43,16 @@ func NewMultiAccountClient(ctx context.Context, accountManager *auth.AccountMana
 
 // GetClientForContext returns the appropriate client based on context hints
 func (mac *MultiAccountClient) GetClientForContext(ctx context.Context, hint string) (*Client, string, error) {
-	// First try to get a specific account based on the hint
-	account, err := mac.accountManager.GetAccountForContext(ctx, hint)
-	if err == nil && account != nil {
-		// Always create a fresh service using the current httpClient so that
-		// token refreshes (accounts_refresh / accounts_add) take effect immediately.
-		service, err := gmail.NewService(ctx, option.WithHTTPClient(account.OAuthClient.GetHTTPClient()))
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to create gmail service: %w", err)
-		}
-		return &Client{service: service}, account.Email, nil
+	account, err := mac.accountManager.ResolveAccount(ctx, hint)
+	if err != nil {
+		return nil, "", err
 	}
 
-	// If context is unclear but only one account exists, use it
-	accounts := mac.accountManager.ListAccounts()
-	if len(accounts) == 1 {
-		account := accounts[0]
-		service, err := gmail.NewService(ctx, option.WithHTTPClient(account.OAuthClient.GetHTTPClient()))
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to create gmail service: %w", err)
-		}
-		return &Client{service: service}, account.Email, nil
+	service, err := gmail.NewService(ctx, option.WithHTTPClient(account.OAuthClient.GetHTTPClient()))
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create gmail service: %w", err)
 	}
-
-	// Return error with available accounts
-	if len(accounts) == 0 {
-		return nil, "", fmt.Errorf("no authenticated accounts available")
-	}
-
-	var accountList []string
-	for _, acc := range accounts {
-		accountList = append(accountList, acc.Email)
-	}
-
-	return nil, "", fmt.Errorf("please specify account: %s", strings.Join(accountList, ", "))
+	return &Client{service: service}, account.Email, nil
 }
 
 // SearchAcrossAccounts searches for messages across all accounts

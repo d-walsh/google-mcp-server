@@ -374,20 +374,10 @@ func (h *MultiAccountHandler) getClientForAccount(ctx context.Context, email str
 		return h.defaultClient, nil
 	}
 
-	// Get account from manager
-	account, err := h.accountManager.GetAccount(email)
+	// Resolve account — requires explicit account when multiple exist
+	account, err := h.accountManager.ResolveAccount(ctx, email)
 	if err != nil {
-		// If specific account not found, try to find one
-		if email == "" {
-			accounts := h.accountManager.ListAccounts()
-			if len(accounts) > 0 {
-				account = accounts[0]
-			} else {
-				return nil, fmt.Errorf("no authenticated accounts available")
-			}
-		} else {
-			return nil, err
-		}
+		return nil, err
 	}
 
 	// Create tasks service for this account
