@@ -292,6 +292,259 @@ func (h *Handler) GetTools() []server.Tool {
 				Required: []string{"spreadsheet_id", "sheet_id"},
 			},
 		},
+		{
+			Name:        "sheets_add_data_validation",
+			Description: "Add data validation to a range (checkboxes, dropdown lists, number ranges, date constraints, or custom formulas)",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"range": {
+						Type:        "string",
+						Description: "A1 notation range (e.g., 'E2:E100')",
+					},
+					"type": {
+						Type:        "string",
+						Description: "Validation type",
+						Enum:        []string{"checkbox", "dropdown", "number_between", "number_greater_than", "number_less_than", "date_after", "date_before", "custom_formula"},
+					},
+					"values": {
+						Type:        "array",
+						Description: "For 'dropdown': list of options. For 'number_between': [min, max]. For 'custom_formula': [formula]. Not needed for 'checkbox'.",
+						Items: &server.Property{
+							Type: "string",
+						},
+					},
+					"strict": {
+						Type:        "boolean",
+						Description: "Reject invalid input (default true)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "range", "type"},
+			},
+		},
+		{
+			Name:        "sheets_add_conditional_formatting",
+			Description: "Add conditional formatting rules to highlight cells based on their values",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"range": {
+						Type:        "string",
+						Description: "A1 notation range (e.g., 'A1:D10')",
+					},
+					"rule_type": {
+						Type:        "string",
+						Description: "Condition type for the rule",
+						Enum:        []string{"number_less_than", "number_greater_than", "number_between", "text_contains", "text_eq", "is_empty", "is_not_empty", "custom_formula"},
+					},
+					"values": {
+						Type:        "array",
+						Description: "Threshold values or formula (e.g., ['100'] for number_greater_than, ['50', '100'] for number_between, ['=A1>B1'] for custom_formula)",
+						Items: &server.Property{
+							Type: "string",
+						},
+					},
+					"background_color": {
+						Type:        "string",
+						Description: "Hex color for matching cells background (e.g., '#ff0000' for red)",
+					},
+					"text_color": {
+						Type:        "string",
+						Description: "Hex color for text in matching cells (e.g., '#ffffff' for white)",
+					},
+					"bold": {
+						Type:        "boolean",
+						Description: "Make text bold in matching cells",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "range", "rule_type", "values"},
+			},
+		},
+		{
+			Name:        "sheets_sort_range",
+			Description: "Sort data in a range by one or more columns",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"range": {
+						Type:        "string",
+						Description: "A1 notation range to sort (e.g., 'A2:D100')",
+					},
+					"sort_column": {
+						Type:        "number",
+						Description: "0-indexed column to sort by (e.g., 0 for column A, 1 for column B)",
+					},
+					"ascending": {
+						Type:        "boolean",
+						Description: "Sort ascending (default true). Set false for descending",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "range", "sort_column"},
+			},
+		},
+		{
+			Name:        "sheets_merge_cells",
+			Description: "Merge or unmerge cells in a range",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"range": {
+						Type:        "string",
+						Description: "A1 notation range to merge/unmerge (e.g., 'A1:C1')",
+					},
+					"merge_type": {
+						Type:        "string",
+						Description: "Merge type (default 'MERGE_ALL')",
+						Enum:        []string{"MERGE_ALL", "MERGE_ROWS", "MERGE_COLUMNS"},
+					},
+					"unmerge": {
+						Type:        "boolean",
+						Description: "If true, unmerge cells instead of merging (default false)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "range"},
+			},
+		},
+		{
+			Name:        "sheets_copy_sheet",
+			Description: "Copy a sheet tab to another spreadsheet (or the same spreadsheet)",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Source spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Source sheet tab ID to copy",
+					},
+					"destination_spreadsheet_id": {
+						Type:        "string",
+						Description: "Target spreadsheet ID (can be the same as source)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "destination_spreadsheet_id"},
+			},
+		},
+		{
+			Name:        "sheets_batch_update",
+			Description: "Generic batch update for power users — accepts raw BatchUpdate request JSON matching the Google Sheets API schema. Use this for any operation not covered by specific tools.",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"requests": {
+						Type:        "array",
+						Description: "Array of request objects matching the Google Sheets API BatchUpdate schema",
+					},
+				},
+				Required: []string{"spreadsheet_id", "requests"},
+			},
+		},
+		{
+			Name:        "sheets_find_replace",
+			Description: "Find and replace text across a sheet or entire spreadsheet",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"find": {
+						Type:        "string",
+						Description: "Text to find",
+					},
+					"replacement": {
+						Type:        "string",
+						Description: "Replacement text",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Limit search to a specific sheet (omit to search all sheets)",
+					},
+					"match_case": {
+						Type:        "boolean",
+						Description: "Case-sensitive search (default false)",
+					},
+					"match_entire_cell": {
+						Type:        "boolean",
+						Description: "Only match if the entire cell matches (default false)",
+					},
+					"search_by_regex": {
+						Type:        "boolean",
+						Description: "Treat 'find' as a regular expression (default false)",
+					},
+				},
+				Required: []string{"spreadsheet_id", "find", "replacement"},
+			},
+		},
+		{
+			Name:        "sheets_set_column_width",
+			Description: "Set specific column widths in pixels",
+			InputSchema: server.InputSchema{
+				Type: "object",
+				Properties: map[string]server.Property{
+					"spreadsheet_id": {
+						Type:        "string",
+						Description: "Spreadsheet ID",
+					},
+					"sheet_id": {
+						Type:        "number",
+						Description: "Numeric sheet ID (from sheets_spreadsheet_get)",
+					},
+					"start_column": {
+						Type:        "number",
+						Description: "Start column index (0-indexed, e.g., 0 for column A)",
+					},
+					"end_column": {
+						Type:        "number",
+						Description: "End column index (0-indexed, exclusive, e.g., 3 for columns A-C)",
+					},
+					"width": {
+						Type:        "number",
+						Description: "Column width in pixels",
+					},
+				},
+				Required: []string{"spreadsheet_id", "sheet_id", "start_column", "end_column", "width"},
+			},
+		},
 	}
 }
 
@@ -688,6 +941,217 @@ func (h *Handler) HandleToolCall(ctx context.Context, name string, arguments jso
 		return map[string]interface{}{
 			"status":     "frozen",
 			"frozenRows": numRows,
+		}, nil
+
+	case "sheets_add_data_validation":
+		var args struct {
+			SpreadsheetID string   `json:"spreadsheet_id"`
+			SheetID       float64  `json:"sheet_id"`
+			Range         string   `json:"range"`
+			Type          string   `json:"type"`
+			Values        []string `json:"values"`
+			Strict        *bool    `json:"strict"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		strict := true
+		if args.Strict != nil {
+			strict = *args.Strict
+		}
+		if err := h.client.SetDataValidation(args.SpreadsheetID, int64(args.SheetID), args.Range, args.Type, args.Values, strict); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status": "validation_set",
+			"range":  args.Range,
+			"type":   args.Type,
+		}, nil
+
+	case "sheets_add_conditional_formatting":
+		var args struct {
+			SpreadsheetID   string   `json:"spreadsheet_id"`
+			SheetID         float64  `json:"sheet_id"`
+			Range           string   `json:"range"`
+			RuleType        string   `json:"rule_type"`
+			Values          []string `json:"values"`
+			BackgroundColor *string  `json:"background_color"`
+			TextColor       *string  `json:"text_color"`
+			Bold            bool     `json:"bold"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		var bgColor *sheets.Color
+		if args.BackgroundColor != nil {
+			var err error
+			bgColor, err = hexToColor(*args.BackgroundColor)
+			if err != nil {
+				return nil, fmt.Errorf("invalid background_color: %w", err)
+			}
+		}
+		var textColor *sheets.Color
+		if args.TextColor != nil {
+			var err error
+			textColor, err = hexToColor(*args.TextColor)
+			if err != nil {
+				return nil, fmt.Errorf("invalid text_color: %w", err)
+			}
+		}
+		if err := h.client.AddConditionalFormatting(args.SpreadsheetID, int64(args.SheetID), args.Range, args.RuleType, args.Values, bgColor, textColor, args.Bold); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":   "formatting_added",
+			"range":    args.Range,
+			"ruleType": args.RuleType,
+		}, nil
+
+	case "sheets_sort_range":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			Range         string  `json:"range"`
+			SortColumn    float64 `json:"sort_column"`
+			Ascending     *bool   `json:"ascending"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		ascending := true
+		if args.Ascending != nil {
+			ascending = *args.Ascending
+		}
+		if err := h.client.SortRange(args.SpreadsheetID, int64(args.SheetID), args.Range, int64(args.SortColumn), ascending); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":    "sorted",
+			"range":     args.Range,
+			"column":    args.SortColumn,
+			"ascending": ascending,
+		}, nil
+
+	case "sheets_merge_cells":
+		var args struct {
+			SpreadsheetID string `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			Range         string `json:"range"`
+			MergeType     string `json:"merge_type"`
+			Unmerge       bool   `json:"unmerge"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		mergeType := args.MergeType
+		if mergeType == "" {
+			mergeType = "MERGE_ALL"
+		}
+		if err := h.client.MergeCells(args.SpreadsheetID, int64(args.SheetID), args.Range, mergeType, args.Unmerge); err != nil {
+			return nil, err
+		}
+		action := "merged"
+		if args.Unmerge {
+			action = "unmerged"
+		}
+		return map[string]interface{}{
+			"status": action,
+			"range":  args.Range,
+		}, nil
+
+	case "sheets_copy_sheet":
+		var args struct {
+			SpreadsheetID            string  `json:"spreadsheet_id"`
+			SheetID                  float64 `json:"sheet_id"`
+			DestinationSpreadsheetID string  `json:"destination_spreadsheet_id"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		props, err := h.client.CopySheet(args.SpreadsheetID, int64(args.SheetID), args.DestinationSpreadsheetID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":  "copied",
+			"sheetId": props.SheetId,
+			"title":   props.Title,
+			"index":   props.Index,
+		}, nil
+
+	case "sheets_batch_update":
+		var args struct {
+			SpreadsheetID string            `json:"spreadsheet_id"`
+			Requests      json.RawMessage   `json:"requests"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		// Unmarshal the raw requests into sheets.Request objects
+		var requests []*sheets.Request
+		if err := json.Unmarshal(args.Requests, &requests); err != nil {
+			return nil, fmt.Errorf("invalid requests format: %w", err)
+		}
+		resp, err := h.client.BatchUpdate(args.SpreadsheetID, requests)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":       "updated",
+			"spreadsheetId": resp.SpreadsheetId,
+			"totalReplies":  len(resp.Replies),
+		}, nil
+
+	case "sheets_find_replace":
+		var args struct {
+			SpreadsheetID  string   `json:"spreadsheet_id"`
+			Find           string   `json:"find"`
+			Replacement    string   `json:"replacement"`
+			SheetID        *float64 `json:"sheet_id"`
+			MatchCase      bool     `json:"match_case"`
+			MatchEntireCell bool    `json:"match_entire_cell"`
+			SearchByRegex  bool     `json:"search_by_regex"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		var sheetID *int64
+		if args.SheetID != nil {
+			id := int64(*args.SheetID)
+			sheetID = &id
+		}
+		result, err := h.client.FindReplace(args.SpreadsheetID, args.Find, args.Replacement, sheetID, args.MatchCase, args.MatchEntireCell, args.SearchByRegex)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":             "replaced",
+			"occurrencesChanged": result.OccurrencesChanged,
+			"rowsChanged":        result.RowsChanged,
+			"sheetsChanged":      result.SheetsChanged,
+			"valuesChanged":      result.ValuesChanged,
+			"formulasChanged":    result.FormulasChanged,
+		}, nil
+
+	case "sheets_set_column_width":
+		var args struct {
+			SpreadsheetID string  `json:"spreadsheet_id"`
+			SheetID       float64 `json:"sheet_id"`
+			StartColumn   float64 `json:"start_column"`
+			EndColumn     float64 `json:"end_column"`
+			Width         float64 `json:"width"`
+		}
+		if err := json.Unmarshal(arguments, &args); err != nil {
+			return nil, fmt.Errorf("invalid arguments: %w", err)
+		}
+		if err := h.client.SetColumnWidth(args.SpreadsheetID, int64(args.SheetID), int64(args.StartColumn), int64(args.EndColumn), int64(args.Width)); err != nil {
+			return nil, err
+		}
+		return map[string]interface{}{
+			"status":      "width_set",
+			"startColumn": args.StartColumn,
+			"endColumn":   args.EndColumn,
+			"width":       args.Width,
 		}, nil
 
 	default:

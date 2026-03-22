@@ -478,3 +478,385 @@ func splitColon(s string) []string {
 	}
 	return []string{s}
 }
+
+// hexToColor converts a hex color string (e.g., "#ff0000") to a Google Sheets Color
+func hexToColor(hex string) (*sheets.Color, error) {
+	// Strip leading '#' if present
+	if len(hex) > 0 && hex[0] == '#' {
+		hex = hex[1:]
+	}
+	if len(hex) != 6 {
+		return nil, fmt.Errorf("expected 6-character hex color, got %q", hex)
+	}
+	r, err := parseHexByte(hex[0:2])
+	if err != nil {
+		return nil, fmt.Errorf("invalid red component: %w", err)
+	}
+	g, err := parseHexByte(hex[2:4])
+	if err != nil {
+		return nil, fmt.Errorf("invalid green component: %w", err)
+	}
+	b, err := parseHexByte(hex[4:6])
+	if err != nil {
+		return nil, fmt.Errorf("invalid blue component: %w", err)
+	}
+	return &sheets.Color{
+		Red:   float64(r) / 255.0,
+		Green: float64(g) / 255.0,
+		Blue:  float64(b) / 255.0,
+	}, nil
+}
+
+func parseHexByte(s string) (byte, error) {
+	var val byte
+	for i := 0; i < 2; i++ {
+		val <<= 4
+		c := s[i]
+		switch {
+		case c >= '0' && c <= '9':
+			val |= c - '0'
+		case c >= 'a' && c <= 'f':
+			val |= c - 'a' + 10
+		case c >= 'A' && c <= 'F':
+			val |= c - 'A' + 10
+		default:
+			return 0, fmt.Errorf("invalid hex character %c", c)
+		}
+	}
+	return val, nil
+}
+
+// SetDataValidation sets data validation on a range
+func (c *Client) SetDataValidation(spreadsheetID string, sheetID int64, rangeA1 string, validationType string, values []string, strict bool) error {
+	gridRange, err := parseA1Range(rangeA1, sheetID)
+	if err != nil {
+		return fmt.Errorf("failed to parse range %q: %w", rangeA1, err)
+	}
+
+	var condition *sheets.BooleanCondition
+	switch validationType {
+	case "checkbox":
+		condition = &sheets.BooleanCondition{
+			Type: "BOOLEAN",
+		}
+	case "dropdown":
+		condValues := make([]*sheets.ConditionValue, len(values))
+		for i, v := range values {
+			condValues[i] = &sheets.ConditionValue{UserEnteredValue: v}
+		}
+		condition = &sheets.BooleanCondition{
+			Type:   "ONE_OF_LIST",
+			Values: condValues,
+		}
+	case "number_between":
+		if len(values) != 2 {
+			return fmt.Errorf("number_between requires exactly 2 values [min, max], got %d", len(values))
+		}
+		condition = &sheets.BooleanCondition{
+			Type: "NUMBER_BETWEEN",
+			Values: []*sheets.ConditionValue{
+				{UserEnteredValue: values[0]},
+				{UserEnteredValue: values[1]},
+			},
+		}
+	case "number_greater_than":
+		if len(values) != 1 {
+			return fmt.Errorf("number_greater_than requires exactly 1 value, got %d", len(values))
+		}
+		condition = &sheets.BooleanCondition{
+			Type: "NUMBER_GREATER",
+			Values: []*sheets.ConditionValue{
+				{UserEnteredValue: values[0]},
+			},
+		}
+	case "number_less_than":
+		if len(values) != 1 {
+			return fmt.Errorf("number_less_than requires exactly 1 value, got %d", len(values))
+		}
+		condition = &sheets.BooleanCondition{
+			Type: "NUMBER_LESS",
+			Values: []*sheets.ConditionValue{
+				{UserEnteredValue: values[0]},
+			},
+		}
+	case "date_after":
+		if len(values) != 1 {
+			return fmt.Errorf("date_after requires exactly 1 value, got %d", len(values))
+		}
+		condition = &sheets.BooleanCondition{
+			Type: "DATE_AFTER",
+			Values: []*sheets.ConditionValue{
+				{UserEnteredValue: values[0]},
+			},
+		}
+	case "date_before":
+		if len(values) != 1 {
+			return fmt.Errorf("date_before requires exactly 1 value, got %d", len(values))
+		}
+		condition = &sheets.BooleanCondition{
+			Type: "DATE_BEFORE",
+			Values: []*sheets.ConditionValue{
+				{UserEnteredValue: values[0]},
+			},
+		}
+	case "custom_formula":
+		if len(values) != 1 {
+			return fmt.Errorf("custom_formula requires exactly 1 value, got %d", len(values))
+		}
+		condition = &sheets.BooleanCondition{
+			Type: "CUSTOM_FORMULA",
+			Values: []*sheets.ConditionValue{
+				{UserEnteredValue: values[0]},
+			},
+		}
+	default:
+		return fmt.Errorf("unsupported validation type: %s", validationType)
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				SetDataValidation: &sheets.SetDataValidationRequest{
+					Range: gridRange,
+					Rule: &sheets.DataValidationRule{
+						Condition:    condition,
+						Strict:       strict,
+						ShowCustomUi: true,
+					},
+				},
+			},
+		},
+	}
+	_, err = c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to set data validation: %w", err)
+	}
+	return nil
+}
+
+// AddConditionalFormatting adds a conditional formatting rule to a range
+func (c *Client) AddConditionalFormatting(spreadsheetID string, sheetID int64, rangeA1 string, ruleType string, values []string, bgColor *sheets.Color, textColor *sheets.Color, bold bool) error {
+	gridRange, err := parseA1Range(rangeA1, sheetID)
+	if err != nil {
+		return fmt.Errorf("failed to parse range %q: %w", rangeA1, err)
+	}
+
+	condValues := make([]*sheets.ConditionValue, len(values))
+	for i, v := range values {
+		condValues[i] = &sheets.ConditionValue{UserEnteredValue: v}
+	}
+
+	var condType string
+	switch ruleType {
+	case "number_less_than":
+		condType = "NUMBER_LESS"
+	case "number_greater_than":
+		condType = "NUMBER_GREATER"
+	case "number_between":
+		condType = "NUMBER_BETWEEN"
+	case "text_contains":
+		condType = "TEXT_CONTAINS"
+	case "text_eq":
+		condType = "TEXT_EQ"
+	case "is_empty":
+		condType = "BLANK"
+	case "is_not_empty":
+		condType = "NOT_BLANK"
+	case "custom_formula":
+		condType = "CUSTOM_FORMULA"
+	default:
+		return fmt.Errorf("unsupported rule type: %s", ruleType)
+	}
+
+	format := &sheets.CellFormat{}
+	if bgColor != nil {
+		format.BackgroundColor = bgColor
+	}
+	if textColor != nil {
+		format.TextFormat = &sheets.TextFormat{
+			ForegroundColor: textColor,
+		}
+	}
+	if bold {
+		if format.TextFormat == nil {
+			format.TextFormat = &sheets.TextFormat{}
+		}
+		format.TextFormat.Bold = true
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				AddConditionalFormatRule: &sheets.AddConditionalFormatRuleRequest{
+					Rule: &sheets.ConditionalFormatRule{
+						Ranges: []*sheets.GridRange{gridRange},
+						BooleanRule: &sheets.BooleanRule{
+							Condition: &sheets.BooleanCondition{
+								Type:   condType,
+								Values: condValues,
+							},
+							Format: format,
+						},
+					},
+				},
+			},
+		},
+	}
+	_, err = c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to add conditional formatting: %w", err)
+	}
+	return nil
+}
+
+// SortRange sorts data in a range by a column
+func (c *Client) SortRange(spreadsheetID string, sheetID int64, rangeA1 string, sortColumn int64, ascending bool) error {
+	gridRange, err := parseA1Range(rangeA1, sheetID)
+	if err != nil {
+		return fmt.Errorf("failed to parse range %q: %w", rangeA1, err)
+	}
+
+	order := "ASCENDING"
+	if !ascending {
+		order = "DESCENDING"
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				SortRange: &sheets.SortRangeRequest{
+					Range: gridRange,
+					SortSpecs: []*sheets.SortSpec{
+						{
+							DimensionIndex: sortColumn,
+							SortOrder:      order,
+						},
+					},
+				},
+			},
+		},
+	}
+	_, err = c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to sort range: %w", err)
+	}
+	return nil
+}
+
+// MergeCells merges or unmerges cells in a range
+func (c *Client) MergeCells(spreadsheetID string, sheetID int64, rangeA1 string, mergeType string, unmerge bool) error {
+	gridRange, err := parseA1Range(rangeA1, sheetID)
+	if err != nil {
+		return fmt.Errorf("failed to parse range %q: %w", rangeA1, err)
+	}
+
+	var request *sheets.Request
+	if unmerge {
+		request = &sheets.Request{
+			UnmergeCells: &sheets.UnmergeCellsRequest{
+				Range: gridRange,
+			},
+		}
+	} else {
+		request = &sheets.Request{
+			MergeCells: &sheets.MergeCellsRequest{
+				Range:     gridRange,
+				MergeType: mergeType,
+			},
+		}
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{request},
+	}
+	_, err = c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		action := "merge"
+		if unmerge {
+			action = "unmerge"
+		}
+		return fmt.Errorf("failed to %s cells: %w", action, err)
+	}
+	return nil
+}
+
+// CopySheet copies a sheet tab to another spreadsheet
+func (c *Client) CopySheet(spreadsheetID string, sheetID int64, destinationSpreadsheetID string) (*sheets.SheetProperties, error) {
+	resp, err := c.service.Spreadsheets.Sheets.CopyTo(spreadsheetID, sheetID, &sheets.CopySheetToAnotherSpreadsheetRequest{
+		DestinationSpreadsheetId: destinationSpreadsheetID,
+	}).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy sheet: %w", err)
+	}
+	return resp, nil
+}
+
+// BatchUpdate executes a raw batch update request
+func (c *Client) BatchUpdate(spreadsheetID string, requests []*sheets.Request) (*sheets.BatchUpdateSpreadsheetResponse, error) {
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: requests,
+	}
+	resp, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to batch update: %w", err)
+	}
+	return resp, nil
+}
+
+// FindReplace finds and replaces text in a spreadsheet
+func (c *Client) FindReplace(spreadsheetID string, find string, replacement string, sheetID *int64, matchCase bool, matchEntireCell bool, searchByRegex bool) (*sheets.FindReplaceResponse, error) {
+	findReplace := &sheets.FindReplaceRequest{
+		Find:            find,
+		Replacement:     replacement,
+		MatchCase:       matchCase,
+		MatchEntireCell: matchEntireCell,
+		SearchByRegex:   searchByRegex,
+		AllSheets:       sheetID == nil,
+	}
+	if sheetID != nil {
+		findReplace.SheetId = *sheetID
+	}
+
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				FindReplace: findReplace,
+			},
+		},
+	}
+	resp, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to find and replace: %w", err)
+	}
+	if len(resp.Replies) > 0 && resp.Replies[0].FindReplace != nil {
+		return resp.Replies[0].FindReplace, nil
+	}
+	return &sheets.FindReplaceResponse{}, nil
+}
+
+// SetColumnWidth sets the width of columns in a range
+func (c *Client) SetColumnWidth(spreadsheetID string, sheetID int64, startColumn int64, endColumn int64, width int64) error {
+	req := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				UpdateDimensionProperties: &sheets.UpdateDimensionPropertiesRequest{
+					Range: &sheets.DimensionRange{
+						SheetId:    sheetID,
+						Dimension:  "COLUMNS",
+						StartIndex: startColumn,
+						EndIndex:   endColumn,
+					},
+					Properties: &sheets.DimensionProperties{
+						PixelSize: width,
+					},
+					Fields: "pixelSize",
+				},
+			},
+		},
+	}
+	_, err := c.service.Spreadsheets.BatchUpdate(spreadsheetID, req).Do()
+	if err != nil {
+		return fmt.Errorf("failed to set column width: %w", err)
+	}
+	return nil
+}
